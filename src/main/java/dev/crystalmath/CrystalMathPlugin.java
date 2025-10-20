@@ -12,7 +12,7 @@ import dev.crystalmath.amethyst.listeners.CrystalLifecycleListener;
 import dev.crystalmath.amethyst.listeners.FortuneListener;
 import dev.crystalmath.amethyst.listeners.GrowthListener;
 import dev.crystalmath.amethyst.gui.AreaAdminGui;
-import dev.crystalmath.amethyst.util.MintedCrystalUtil;
+import dev.crystalmath.amethyst.util.MintedCrystalRecipeChoice;
 import dev.crystalmath.claims.ClaimAdminCommand;
 import dev.crystalmath.claims.ClaimManager;
 import dev.crystalmath.claims.ClaimProtectionListener;
@@ -24,13 +24,11 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
-import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.Iterator;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.logging.Level;
 
 public class CrystalMathPlugin extends JavaPlugin {
@@ -126,9 +124,7 @@ public class CrystalMathPlugin extends JavaPlugin {
         recipe.setIngredient('G', Material.GLASS);
         recipe.setIngredient('O', Material.OBSIDIAN);
 
-        ItemStack mintedCrystalTemplate = new ItemStack(Material.AMETHYST_SHARD);
-        MintedCrystalUtil.applyMetadata(mintedCrystalTemplate, new UUID(0L, 0L), mintedCrystalKey);
-        RecipeChoice.ExactChoice mintedCrystal = new RecipeChoice.ExactChoice(mintedCrystalTemplate);
+        MintedCrystalRecipeChoice mintedCrystal = new MintedCrystalRecipeChoice(mintedCrystalKey);
         recipe.setIngredient('C', mintedCrystal);
         recipe.setIngredient('M', mintedCrystal);
 
