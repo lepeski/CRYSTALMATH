@@ -4,6 +4,7 @@ import dev.crystalmath.amethyst.AreaManager;
 import dev.crystalmath.amethyst.MintLedger;
 import dev.crystalmath.amethyst.commands.AreaAdminCommand;
 import dev.crystalmath.amethyst.commands.ClaimAreaCommand;
+import dev.crystalmath.amethyst.commands.CrystalAuditCommand;
 import dev.crystalmath.amethyst.commands.RedeemAllCommand;
 import dev.crystalmath.amethyst.commands.RedeemCommand;
 import dev.crystalmath.amethyst.commands.SpawnCrystalsCommand;
@@ -63,13 +64,14 @@ public class CrystalMathPlugin extends JavaPlugin {
         lifecycleListener = new CrystalLifecycleListener(this, ledger, mintedCrystalKey);
         Bukkit.getPluginManager().registerEvents(lifecycleListener, this);
         Bukkit.getPluginManager().registerEvents(new GrowthListener(), this);
-        Bukkit.getPluginManager().registerEvents(new BeaconCraftListener(this, ledger, mintedCrystalKey), this);
+        Bukkit.getPluginManager().registerEvents(new BeaconCraftListener(this, ledger, mintedCrystalKey, beaconRecipeKey), this);
 
         registerExecutor("claimarea", new ClaimAreaCommand(this, ledger, areaManager));
         registerExecutor("spawncrystals", new SpawnCrystalsCommand(this, ledger, areaManager));
         registerExecutor("supply", new SupplyCommand(this, ledger));
         registerExecutor("redeem", new RedeemCommand(this, ledger, mintedCrystalKey));
         registerExecutor("redeemall", new RedeemAllCommand(this, ledger, mintedCrystalKey));
+        registerExecutor("crystalaudit", new CrystalAuditCommand(this, ledger, mintedCrystalKey));
 
         areaAdminGui = new AreaAdminGui(this, ledger);
         Bukkit.getPluginManager().registerEvents(areaAdminGui, this);

@@ -122,7 +122,9 @@ public class CrystalLifecycleListener implements Listener {
             return;
         }
 
-        if (!FIRE_CAUSES.contains(event.getCause())) {
+        EntityDamageEvent.DamageCause cause = event.getCause();
+        boolean voidDamage = cause == EntityDamageEvent.DamageCause.VOID;
+        if (!FIRE_CAUSES.contains(cause) && !voidDamage) {
             return;
         }
 

@@ -31,6 +31,11 @@ commands:
     usage: /redeemall
     permission: amethystcontrol.redeemall
     permission-message: You do not have permission to use this command.
+  crystalaudit:
+    description: Compares minted crystals in the world against the ledger supply.
+    usage: /crystalaudit
+    permission: amethystcontrol.audit
+    permission-message: You do not have permission to use this command.
   areaadmin:
     description: Opens the crystal mint area administration panel.
     permission: amethystcontrol.areaadmin
@@ -49,6 +54,8 @@ permissions:
   amethystcontrol.redeem:
     default: op
   amethystcontrol.redeemall:
+    default: op
+  amethystcontrol.audit:
     default: op
   amethystcontrol.areaadmin:
     default: op

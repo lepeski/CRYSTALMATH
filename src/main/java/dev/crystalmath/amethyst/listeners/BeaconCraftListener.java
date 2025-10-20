@@ -16,6 +16,7 @@ import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.inventory.PrepareItemCraftEvent;
 import org.bukkit.inventory.CraftingInventory;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.Recipe;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.ArrayList;
@@ -30,20 +31,23 @@ public class BeaconCraftListener implements Listener {
     private final JavaPlugin plugin;
     private final MintLedger ledger;
     private final NamespacedKey crystalKey;
-    public BeaconCraftListener(JavaPlugin plugin, MintLedger ledger, NamespacedKey crystalKey) {
+    private final NamespacedKey recipeKey;
+
+    public BeaconCraftListener(JavaPlugin plugin, MintLedger ledger, NamespacedKey crystalKey, NamespacedKey recipeKey) {
         this.plugin = plugin;
         this.ledger = ledger;
         this.crystalKey = crystalKey;
+        this.recipeKey = recipeKey;
     }
 
     @EventHandler(priority = EventPriority.NORMAL)
     public void onPrepareBeacon(PrepareItemCraftEvent event) {
-        CraftingInventory inventory = event.getInventory();
-        ItemStack[] matrix = inventory.getMatrix();
-        if (!isBeaconAttempt(matrix)) {
+        if (!isTargetRecipe(event.getRecipe())) {
             return;
         }
 
+        CraftingInventory inventory = event.getInventory();
+        ItemStack[] matrix = inventory.getMatrix();
         if (hasMintedIngredients(matrix)) {
             inventory.setResult(new ItemStack(Material.BEACON));
         } else {
@@ -53,12 +57,12 @@ public class BeaconCraftListener implements Listener {
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onBeaconCraft(CraftItemEvent event) {
-        CraftingInventory inventory = event.getInventory();
-        ItemStack[] matrix = inventory.getMatrix();
-        if (!isBeaconAttempt(matrix)) {
+        if (!isTargetRecipe(event.getRecipe())) {
             return;
         }
 
+        CraftingInventory inventory = event.getInventory();
+        ItemStack[] matrix = inventory.getMatrix();
         if (!hasMintedIngredients(matrix)) {
             event.setCancelled(true);
             HumanEntity who = event.getWhoClicked();
@@ -111,43 +115,12 @@ public class BeaconCraftListener implements Listener {
             return false;
         }
 
-        return isMintedCrystal(matrix[1]) && isMintedCrystal(matrix[4]);
+        return MintedCrystalUtil.readLedgerId(matrix[1], crystalKey).isPresent()
+                && MintedCrystalUtil.readLedgerId(matrix[4], crystalKey).isPresent();
     }
 
     private boolean hasRequiredSlots(ItemStack[] matrix) {
-        return matrix != null && matrix.length >= 9;
-    }
-
-    private boolean isMintedCrystal(ItemStack stack) {
-        return MintedCrystalUtil.readLedgerId(stack, crystalKey).isPresent();
-    }
-
-    private boolean isBeaconAttempt(ItemStack[] matrix) {
-        if (!hasRequiredSlots(matrix)) {
-            return false;
-        }
-
-        return isGlass(matrix[0])
-                && isAmethystShard(matrix[1])
-                && isGlass(matrix[2])
-                && isGlass(matrix[3])
-                && isAmethystShard(matrix[4])
-                && isGlass(matrix[5])
-                && isObsidian(matrix[6])
-                && isObsidian(matrix[7])
-                && isObsidian(matrix[8]);
-    }
-
-    private boolean isGlass(ItemStack stack) {
-        return stack != null && stack.getType() == Material.GLASS;
-    }
-
-    private boolean isObsidian(ItemStack stack) {
-        return stack != null && stack.getType() == Material.OBSIDIAN;
-    }
-
-    private boolean isAmethystShard(ItemStack stack) {
-        return stack != null && stack.getType() == Material.AMETHYST_SHARD;
+        return matrix != null && matrix.length >= 5;
     }
 
     private List<UUID> collectMintedIds(ItemStack[] matrix) {
@@ -155,6 +128,16 @@ public class BeaconCraftListener implements Listener {
         addMintedId(consumed, matrix, 1);
         addMintedId(consumed, matrix, 4);
         return consumed;
+    }
+
+    private boolean isTargetRecipe(Recipe recipe) {
+        if (recipe == null) {
+            return false;
+        }
+        if (!(recipe instanceof org.bukkit.Keyed keyed)) {
+            return false;
+        }
+        return recipeKey.equals(keyed.getKey());
     }
 
     private void addMintedId(List<UUID> target, ItemStack[] matrix, int index) {

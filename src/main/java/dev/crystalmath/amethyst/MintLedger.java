@@ -368,6 +368,45 @@ public class MintLedger {
         );
     }
 
+    public synchronized List<LedgerEntry> listEntriesByStatus(String... statuses) {
+        ensureConnection();
+
+        if (statuses == null || statuses.length == 0) {
+            throw new LedgerException("At least one status must be provided");
+        }
+
+        StringBuilder placeholders = new StringBuilder();
+        for (int i = 0; i < statuses.length; i++) {
+            if (i > 0) {
+                placeholders.append(", ");
+            }
+            placeholders.append("?");
+        }
+
+        String sql = """
+                SELECT uuid, area_id, status, world, x, y, z
+                FROM crystals
+                WHERE status IN (%s)
+                """.formatted(placeholders);
+
+        List<LedgerEntry> entries = new ArrayList<>();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            for (int i = 0; i < statuses.length; i++) {
+                statement.setString(i + 1, statuses[i]);
+            }
+
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    entries.add(mapRow(resultSet));
+                }
+            }
+        } catch (SQLException exception) {
+            throw new LedgerException("Unable to list ledger entries by status", exception);
+        }
+
+        return entries;
+    }
+
     private boolean updateStatus(UUID uuid, String newStatus, Location location, String... allowedStatuses) {
         ensureConnection();
 
