@@ -3,10 +3,12 @@ package dev.crystalmath.amethyst.listeners;
 import dev.crystalmath.amethyst.MintLedger;
 import dev.crystalmath.amethyst.util.MintedCrystalUtil;
 import org.bukkit.Bukkit;
+import org.bukkit.ChatColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.entity.HumanEntity;
+import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -47,15 +49,12 @@ public class BeaconCraftListener implements Listener {
 
         CraftingInventory inventory = event.getInventory();
         ItemStack[] matrix = inventory.getMatrix();
-        if (matrix == null || matrix.length < 5) {
+        if (!hasRequiredSlots(matrix)) {
             inventory.setResult(null);
             return;
         }
 
-        boolean topMinted = isMintedCrystal(matrix[1]);
-        boolean centerMinted = isMintedCrystal(matrix[4]);
-
-        if (topMinted && centerMinted) {
+        if (hasMintedIngredients(matrix)) {
             inventory.setResult(recipe.getResult().clone());
         } else {
             inventory.setResult(null);
@@ -71,7 +70,13 @@ public class BeaconCraftListener implements Listener {
 
         CraftingInventory inventory = event.getInventory();
         ItemStack[] matrix = inventory.getMatrix();
-        if (matrix == null || matrix.length == 0) {
+        if (!hasRequiredSlots(matrix) || !hasMintedIngredients(matrix)) {
+            event.setCancelled(true);
+            HumanEntity who = event.getWhoClicked();
+            if (who instanceof Player player) {
+                player.sendMessage(ChatColor.RED + "Two minted crystals are required to craft a beacon.");
+            }
+            inventory.setResult(null);
             return;
         }
 
@@ -116,6 +121,18 @@ public class BeaconCraftListener implements Listener {
             return false;
         }
         return recipe instanceof org.bukkit.Keyed keyed && beaconRecipeKey.equals(keyed.getKey());
+    }
+
+    private boolean hasMintedIngredients(ItemStack[] matrix) {
+        if (!hasRequiredSlots(matrix)) {
+            return false;
+        }
+
+        return isMintedCrystal(matrix[1]) && isMintedCrystal(matrix[4]);
+    }
+
+    private boolean hasRequiredSlots(ItemStack[] matrix) {
+        return matrix != null && matrix.length >= 5;
     }
 
     private boolean isMintedCrystal(ItemStack stack) {

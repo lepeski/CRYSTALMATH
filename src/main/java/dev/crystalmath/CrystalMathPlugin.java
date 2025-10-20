@@ -121,6 +121,7 @@ public class CrystalMathPlugin extends JavaPlugin {
 
     private void registerBeaconRecipe() {
         removeVanillaBeacon();
+        Bukkit.removeRecipe(beaconRecipeKey);
 
         ItemStack result = new ItemStack(Material.BEACON);
         ShapedRecipe recipe = new ShapedRecipe(beaconRecipeKey, result);
@@ -132,7 +133,10 @@ public class CrystalMathPlugin extends JavaPlugin {
         recipe.setIngredient('C', mintedCrystal);
         recipe.setIngredient('M', mintedCrystal);
 
-        Bukkit.addRecipe(recipe);
+        boolean registered = Bukkit.addRecipe(recipe);
+        if (!registered) {
+            getLogger().warning("Failed to register custom beacon recipe; a conflicting recipe may already exist.");
+        }
     }
 
     private void removeVanillaBeacon() {

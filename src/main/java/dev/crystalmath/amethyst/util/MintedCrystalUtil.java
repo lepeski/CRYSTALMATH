@@ -44,19 +44,45 @@ public final class MintedCrystalUtil {
         }
 
         PersistentDataContainer container = meta.getPersistentDataContainer();
-        if (!container.has(key, PersistentDataType.STRING)) {
+        if (container.has(key, PersistentDataType.STRING)) {
+            String raw = container.get(key, PersistentDataType.STRING);
+            if (raw != null) {
+                try {
+                    return Optional.of(UUID.fromString(raw));
+                } catch (IllegalArgumentException ignored) {
+                    // fall back to lore parsing
+                }
+            }
+        }
+
+        List<String> lore = meta.getLore();
+        if (lore == null) {
             return Optional.empty();
         }
 
-        String raw = container.get(key, PersistentDataType.STRING);
-        if (raw == null) {
-            return Optional.empty();
+        for (String line : lore) {
+            if (line == null) {
+                continue;
+            }
+
+            String stripped = ChatColor.stripColor(line);
+            if (stripped == null) {
+                continue;
+            }
+
+            String prefix = "Ledger ID: ";
+            if (!stripped.startsWith(prefix)) {
+                continue;
+            }
+
+            String candidate = stripped.substring(prefix.length()).trim();
+            try {
+                return Optional.of(UUID.fromString(candidate));
+            } catch (IllegalArgumentException ignored) {
+                // Ignore malformed lore entries and continue searching
+            }
         }
 
-        try {
-            return Optional.of(UUID.fromString(raw));
-        } catch (IllegalArgumentException exception) {
-            return Optional.empty();
-        }
+        return Optional.empty();
     }
 }
