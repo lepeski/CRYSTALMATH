@@ -31,6 +31,10 @@ commands:
     usage: /redeemall
     permission: amethystcontrol.redeemall
     permission-message: You do not have permission to use this command.
+  areaadmin:
+    description: Opens the crystal mint area administration panel.
+    permission: amethystcontrol.areaadmin
+    permission-message: You do not have permission to use this command.
   claimadmin:
     description: Opens the claim administration panel
     permission: claimer.admin
@@ -45,6 +49,8 @@ permissions:
   amethystcontrol.redeem:
     default: op
   amethystcontrol.redeemall:
+    default: op
+  amethystcontrol.areaadmin:
     default: op
   claimer.admin:
     description: Allows managing all claims

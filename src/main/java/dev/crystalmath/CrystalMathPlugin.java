@@ -2,6 +2,7 @@ package dev.crystalmath;
 
 import dev.crystalmath.amethyst.AreaManager;
 import dev.crystalmath.amethyst.MintLedger;
+import dev.crystalmath.amethyst.commands.AreaAdminCommand;
 import dev.crystalmath.amethyst.commands.ClaimAreaCommand;
 import dev.crystalmath.amethyst.commands.RedeemAllCommand;
 import dev.crystalmath.amethyst.commands.RedeemCommand;
@@ -10,6 +11,7 @@ import dev.crystalmath.amethyst.commands.SupplyCommand;
 import dev.crystalmath.amethyst.listeners.CrystalLifecycleListener;
 import dev.crystalmath.amethyst.listeners.FortuneListener;
 import dev.crystalmath.amethyst.listeners.GrowthListener;
+import dev.crystalmath.amethyst.gui.AreaAdminGui;
 import dev.crystalmath.amethyst.util.MintedCrystalUtil;
 import dev.crystalmath.claims.ClaimAdminCommand;
 import dev.crystalmath.claims.ClaimManager;
@@ -37,6 +39,7 @@ public class CrystalMathPlugin extends JavaPlugin {
     private NamespacedKey mintedCrystalKey;
     private ClaimManager claimManager;
     private AdminGui adminGui;
+    private AreaAdminGui areaAdminGui;
 
     @Override
     public void onEnable() {
@@ -63,6 +66,10 @@ public class CrystalMathPlugin extends JavaPlugin {
         registerExecutor("supply", new SupplyCommand(this, ledger));
         registerExecutor("redeem", new RedeemCommand(this, ledger, mintedCrystalKey));
         registerExecutor("redeemall", new RedeemAllCommand(this, ledger, mintedCrystalKey));
+
+        areaAdminGui = new AreaAdminGui(this, ledger);
+        Bukkit.getPluginManager().registerEvents(areaAdminGui, this);
+        registerExecutor("areaadmin", new AreaAdminCommand(areaAdminGui));
 
         claimManager = new ClaimManager(this);
         claimManager.load();
@@ -115,13 +122,15 @@ public class CrystalMathPlugin extends JavaPlugin {
 
         ItemStack result = new ItemStack(Material.BEACON);
         ShapedRecipe recipe = new ShapedRecipe(new NamespacedKey(this, "beacon"), result);
-        recipe.shape("GGG", "GCG", "OOO");
+        recipe.shape("GMG", "GCG", "OOO");
         recipe.setIngredient('G', Material.GLASS);
         recipe.setIngredient('O', Material.OBSIDIAN);
 
         ItemStack mintedCrystalTemplate = new ItemStack(Material.AMETHYST_SHARD);
         MintedCrystalUtil.applyMetadata(mintedCrystalTemplate, new UUID(0L, 0L), mintedCrystalKey);
-        recipe.setIngredient('C', new RecipeChoice.ExactChoice(mintedCrystalTemplate));
+        RecipeChoice.ExactChoice mintedCrystal = new RecipeChoice.ExactChoice(mintedCrystalTemplate);
+        recipe.setIngredient('C', mintedCrystal);
+        recipe.setIngredient('M', mintedCrystal);
 
         Bukkit.addRecipe(recipe);
     }
