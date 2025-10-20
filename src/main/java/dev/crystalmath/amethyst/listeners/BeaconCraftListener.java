@@ -16,12 +16,11 @@ import org.bukkit.event.inventory.CraftItemEvent;
 import org.bukkit.event.inventory.PrepareItemCraftEvent;
 import org.bukkit.inventory.CraftingInventory;
 import org.bukkit.inventory.ItemStack;
-import org.bukkit.inventory.Recipe;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.HashSet;
+import java.util.ArrayList;
 import java.util.Optional;
-import java.util.Set;
+import java.util.List;
 import java.util.UUID;
 
 /**
@@ -31,13 +30,10 @@ public class BeaconCraftListener implements Listener {
     private final JavaPlugin plugin;
     private final MintLedger ledger;
     private final NamespacedKey crystalKey;
-    private final NamespacedKey beaconRecipeKey;
-
-    public BeaconCraftListener(JavaPlugin plugin, MintLedger ledger, NamespacedKey crystalKey, NamespacedKey beaconRecipeKey) {
+    public BeaconCraftListener(JavaPlugin plugin, MintLedger ledger, NamespacedKey crystalKey) {
         this.plugin = plugin;
         this.ledger = ledger;
         this.crystalKey = crystalKey;
-        this.beaconRecipeKey = beaconRecipeKey;
     }
 
     @EventHandler(priority = EventPriority.NORMAL)
@@ -49,7 +45,7 @@ public class BeaconCraftListener implements Listener {
         }
 
         if (hasMintedIngredients(matrix)) {
-            inventory.setResult(createBeaconResult(event.getRecipe()));
+            inventory.setResult(new ItemStack(Material.BEACON));
         } else {
             inventory.setResult(null);
         }
@@ -73,7 +69,7 @@ public class BeaconCraftListener implements Listener {
             return;
         }
 
-        Set<UUID> consumed = collectMintedIds(matrix);
+        List<UUID> consumed = collectMintedIds(matrix);
         if (consumed.size() < 2) {
             event.setCancelled(true);
             inventory.setResult(null);
@@ -154,24 +150,14 @@ public class BeaconCraftListener implements Listener {
         return stack != null && stack.getType() == Material.AMETHYST_SHARD;
     }
 
-    private ItemStack createBeaconResult(Recipe recipe) {
-        if (recipe instanceof org.bukkit.Keyed keyed && beaconRecipeKey.equals(keyed.getKey())) {
-            ItemStack result = recipe.getResult();
-            if (result != null && result.getType() == Material.BEACON) {
-                return result.clone();
-            }
-        }
-        return new ItemStack(Material.BEACON);
-    }
-
-    private Set<UUID> collectMintedIds(ItemStack[] matrix) {
-        Set<UUID> consumed = new HashSet<>();
+    private List<UUID> collectMintedIds(ItemStack[] matrix) {
+        List<UUID> consumed = new ArrayList<>(2);
         addMintedId(consumed, matrix, 1);
         addMintedId(consumed, matrix, 4);
         return consumed;
     }
 
-    private void addMintedId(Set<UUID> target, ItemStack[] matrix, int index) {
+    private void addMintedId(List<UUID> target, ItemStack[] matrix, int index) {
         if (index < matrix.length) {
             Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(matrix[index], crystalKey);
             uuidOptional.ifPresent(target::add);

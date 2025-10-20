@@ -2,8 +2,6 @@ package dev.crystalmath.amethyst.listeners;
 
 import dev.crystalmath.amethyst.MintLedger;
 import dev.crystalmath.amethyst.util.MintedCrystalUtil;
-import io.papermc.paper.event.entity.EntityRemoveEvent;
-import io.papermc.paper.event.entity.EntityRemoveFromWorldEvent;
 import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
@@ -18,14 +16,21 @@ import org.bukkit.event.block.BlockFadeEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
 import org.bukkit.event.entity.ItemDespawnEvent;
+import org.bukkit.event.entity.ItemSpawnEvent;
+import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.inventory.InventoryPickupItemEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
+import org.bukkit.scheduler.BukkitTask;
 
 import java.util.Collection;
 import java.util.EnumSet;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Iterator;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -41,11 +46,14 @@ public class CrystalLifecycleListener implements Listener {
     private final JavaPlugin plugin;
     private final MintLedger ledger;
     private final NamespacedKey crystalKey;
+    private final Map<Integer, TrackedItem> trackedItems = new HashMap<>();
+    private final BukkitTask voidWatchTask;
 
     public CrystalLifecycleListener(JavaPlugin plugin, MintLedger ledger, NamespacedKey crystalKey) {
         this.plugin = plugin;
         this.ledger = ledger;
         this.crystalKey = crystalKey;
+        this.voidWatchTask = Bukkit.getScheduler().runTaskTimer(plugin, this::pollTrackedItems, 20L, 20L);
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
@@ -80,6 +88,7 @@ public class CrystalLifecycleListener implements Listener {
     public void onPlayerDropItem(PlayerDropItemEvent event) {
         Item item = event.getItemDrop();
         refreshMintedMetadata(item.getItemStack());
+        trackMintedItem(item);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -104,6 +113,7 @@ public class CrystalLifecycleListener implements Listener {
         Item item = event.getEntity();
         Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(item.getItemStack(), crystalKey);
         uuidOptional.ifPresent(uuid -> markLost(uuid, item.getLocation().clone()));
+        stopTracking(item);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -118,20 +128,29 @@ public class CrystalLifecycleListener implements Listener {
 
         Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(item.getItemStack(), crystalKey);
         uuidOptional.ifPresent(uuid -> markLost(uuid, item.getLocation().clone()));
+        stopTracking(item);
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
-    public void onItemRemoved(EntityRemoveFromWorldEvent event) {
-        if (!(event.getEntity() instanceof Item item)) {
-            return;
-        }
+    public void onItemSpawn(ItemSpawnEvent event) {
+        trackMintedItem(event.getEntity());
+    }
 
-        if (event.getCause() != EntityRemoveEvent.Cause.VOID) {
-            return;
-        }
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onEntityPickup(EntityPickupItemEvent event) {
+        stopTracking(event.getItem());
+    }
 
-        Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(item.getItemStack(), crystalKey);
-        uuidOptional.ifPresent(uuid -> markLost(uuid, item.getLocation().clone()));
+    @EventHandler(priority = EventPriority.MONITOR, ignoreCancelled = true)
+    public void onInventoryPickup(InventoryPickupItemEvent event) {
+        stopTracking(event.getItem());
+    }
+
+    public void shutdown() {
+        if (voidWatchTask != null) {
+            voidWatchTask.cancel();
+        }
+        trackedItems.clear();
     }
 
     private void markLostAtLocation(Location location) {
@@ -178,6 +197,49 @@ public class CrystalLifecycleListener implements Listener {
         uuidOptional.ifPresent(uuid -> MintedCrystalUtil.applyMetadata(stack, uuid, crystalKey));
     }
 
+    private void trackMintedItem(Item item) {
+        Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(item.getItemStack(), crystalKey);
+        uuidOptional.ifPresent(uuid -> trackedItems.put(item.getEntityId(), new TrackedItem(item, uuid)));
+    }
+
+    private void stopTracking(Item item) {
+        if (item != null) {
+            trackedItems.remove(item.getEntityId());
+        }
+    }
+
+    private void pollTrackedItems() {
+        Iterator<Map.Entry<Integer, TrackedItem>> iterator = trackedItems.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<Integer, TrackedItem> entry = iterator.next();
+            TrackedItem tracked = entry.getValue();
+            Item item = tracked.item;
+            if (item == null) {
+                iterator.remove();
+                continue;
+            }
+
+            if (!item.isValid() || item.isDead()) {
+                if (tracked.lastKnownLocation != null && isVoid(tracked.lastKnownLocation)) {
+                    markLost(tracked.uuid, tracked.lastKnownLocation);
+                }
+                iterator.remove();
+                continue;
+            }
+
+            Location current = item.getLocation();
+            tracked.lastKnownLocation = current.clone();
+            if (isVoid(current)) {
+                markLost(tracked.uuid, current);
+                iterator.remove();
+            }
+        }
+    }
+
+    private boolean isVoid(Location location) {
+        return location.getWorld() != null && location.getY() < location.getWorld().getMinHeight();
+    }
+
     private void markLostStacks(Collection<ItemStack> stacks, Location location) {
         if (stacks == null || stacks.isEmpty()) {
             return;
@@ -202,5 +264,16 @@ public class CrystalLifecycleListener implements Listener {
                 }
             }
         });
+    }
+
+    private static final class TrackedItem {
+        private final Item item;
+        private final UUID uuid;
+        private Location lastKnownLocation;
+
+        private TrackedItem(Item item, UUID uuid) {
+            this.item = item;
+            this.uuid = uuid;
+        }
     }
 }

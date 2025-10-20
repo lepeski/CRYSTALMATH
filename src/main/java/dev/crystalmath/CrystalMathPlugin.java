@@ -40,6 +40,7 @@ public class CrystalMathPlugin extends JavaPlugin {
     private AdminGui adminGui;
     private AreaAdminGui areaAdminGui;
     private NamespacedKey beaconRecipeKey;
+    private CrystalLifecycleListener lifecycleListener;
 
     @Override
     public void onEnable() {
@@ -59,9 +60,10 @@ public class CrystalMathPlugin extends JavaPlugin {
         areaManager = new AreaManager(this, ledger);
 
         Bukkit.getPluginManager().registerEvents(new FortuneListener(this, ledger, mintedCrystalKey), this);
-        Bukkit.getPluginManager().registerEvents(new CrystalLifecycleListener(this, ledger, mintedCrystalKey), this);
+        lifecycleListener = new CrystalLifecycleListener(this, ledger, mintedCrystalKey);
+        Bukkit.getPluginManager().registerEvents(lifecycleListener, this);
         Bukkit.getPluginManager().registerEvents(new GrowthListener(), this);
-        Bukkit.getPluginManager().registerEvents(new BeaconCraftListener(this, ledger, mintedCrystalKey, beaconRecipeKey), this);
+        Bukkit.getPluginManager().registerEvents(new BeaconCraftListener(this, ledger, mintedCrystalKey), this);
 
         registerExecutor("claimarea", new ClaimAreaCommand(this, ledger, areaManager));
         registerExecutor("spawncrystals", new SpawnCrystalsCommand(this, ledger, areaManager));
@@ -95,6 +97,9 @@ public class CrystalMathPlugin extends JavaPlugin {
         }
         if (ledger != null) {
             ledger.close();
+        }
+        if (lifecycleListener != null) {
+            lifecycleListener.shutdown();
         }
     }
 
