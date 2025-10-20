@@ -82,7 +82,7 @@ public class FortuneListener implements Listener {
         }
 
         ItemStack tool = player.getInventory().getItemInMainHand();
-        if (tool.containsEnchantment(Enchantment.LOOT_BONUS_BLOCKS)) {
+        if (tool.containsEnchantment(Enchantment.FORTUNE)) {
             event.setDropItems(false);
             block.getWorld().dropItemNaturally(location, new ItemStack(Material.AMETHYST_SHARD, 1));
         }
