@@ -42,20 +42,14 @@ public class BeaconCraftListener implements Listener {
 
     @EventHandler(priority = EventPriority.NORMAL)
     public void onPrepareBeacon(PrepareItemCraftEvent event) {
-        Recipe recipe = event.getRecipe();
-        if (!isTargetRecipe(recipe)) {
-            return;
-        }
-
         CraftingInventory inventory = event.getInventory();
         ItemStack[] matrix = inventory.getMatrix();
-        if (!hasRequiredSlots(matrix)) {
-            inventory.setResult(null);
+        if (!isBeaconAttempt(matrix)) {
             return;
         }
 
         if (hasMintedIngredients(matrix)) {
-            inventory.setResult(recipe.getResult().clone());
+            inventory.setResult(createBeaconResult(event.getRecipe()));
         } else {
             inventory.setResult(null);
         }
@@ -63,14 +57,13 @@ public class BeaconCraftListener implements Listener {
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onBeaconCraft(CraftItemEvent event) {
-        Recipe recipe = event.getRecipe();
-        if (!isTargetRecipe(recipe)) {
+        CraftingInventory inventory = event.getInventory();
+        ItemStack[] matrix = inventory.getMatrix();
+        if (!isBeaconAttempt(matrix)) {
             return;
         }
 
-        CraftingInventory inventory = event.getInventory();
-        ItemStack[] matrix = inventory.getMatrix();
-        if (!hasRequiredSlots(matrix) || !hasMintedIngredients(matrix)) {
+        if (!hasMintedIngredients(matrix)) {
             event.setCancelled(true);
             HumanEntity who = event.getWhoClicked();
             if (who instanceof Player player) {
@@ -80,13 +73,14 @@ public class BeaconCraftListener implements Listener {
             return;
         }
 
-        Set<UUID> consumed = new HashSet<>();
-        for (ItemStack stack : matrix) {
-            Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(stack, crystalKey);
-            uuidOptional.ifPresent(consumed::add);
-        }
-
-        if (consumed.isEmpty()) {
+        Set<UUID> consumed = collectMintedIds(matrix);
+        if (consumed.size() < 2) {
+            event.setCancelled(true);
+            inventory.setResult(null);
+            HumanEntity who = event.getWhoClicked();
+            if (who instanceof Player player) {
+                player.sendMessage(ChatColor.RED + "Unable to confirm the ledger IDs for the provided crystals.");
+            }
             return;
         }
 
@@ -116,13 +110,6 @@ public class BeaconCraftListener implements Listener {
                 + ", Z=" + location.getBlockZ();
     }
 
-    private boolean isTargetRecipe(Recipe recipe) {
-        if (recipe == null || recipe.getResult() == null || recipe.getResult().getType() != Material.BEACON) {
-            return false;
-        }
-        return recipe instanceof org.bukkit.Keyed keyed && beaconRecipeKey.equals(keyed.getKey());
-    }
-
     private boolean hasMintedIngredients(ItemStack[] matrix) {
         if (!hasRequiredSlots(matrix)) {
             return false;
@@ -132,10 +119,62 @@ public class BeaconCraftListener implements Listener {
     }
 
     private boolean hasRequiredSlots(ItemStack[] matrix) {
-        return matrix != null && matrix.length >= 5;
+        return matrix != null && matrix.length >= 9;
     }
 
     private boolean isMintedCrystal(ItemStack stack) {
         return MintedCrystalUtil.readLedgerId(stack, crystalKey).isPresent();
+    }
+
+    private boolean isBeaconAttempt(ItemStack[] matrix) {
+        if (!hasRequiredSlots(matrix)) {
+            return false;
+        }
+
+        return isGlass(matrix[0])
+                && isAmethystShard(matrix[1])
+                && isGlass(matrix[2])
+                && isGlass(matrix[3])
+                && isAmethystShard(matrix[4])
+                && isGlass(matrix[5])
+                && isObsidian(matrix[6])
+                && isObsidian(matrix[7])
+                && isObsidian(matrix[8]);
+    }
+
+    private boolean isGlass(ItemStack stack) {
+        return stack != null && stack.getType() == Material.GLASS;
+    }
+
+    private boolean isObsidian(ItemStack stack) {
+        return stack != null && stack.getType() == Material.OBSIDIAN;
+    }
+
+    private boolean isAmethystShard(ItemStack stack) {
+        return stack != null && stack.getType() == Material.AMETHYST_SHARD;
+    }
+
+    private ItemStack createBeaconResult(Recipe recipe) {
+        if (recipe instanceof org.bukkit.Keyed keyed && beaconRecipeKey.equals(keyed.getKey())) {
+            ItemStack result = recipe.getResult();
+            if (result != null && result.getType() == Material.BEACON) {
+                return result.clone();
+            }
+        }
+        return new ItemStack(Material.BEACON);
+    }
+
+    private Set<UUID> collectMintedIds(ItemStack[] matrix) {
+        Set<UUID> consumed = new HashSet<>();
+        addMintedId(consumed, matrix, 1);
+        addMintedId(consumed, matrix, 4);
+        return consumed;
+    }
+
+    private void addMintedId(Set<UUID> target, ItemStack[] matrix, int index) {
+        if (index < matrix.length) {
+            Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(matrix[index], crystalKey);
+            uuidOptional.ifPresent(target::add);
+        }
     }
 }
