@@ -30,7 +30,8 @@ public class CrystalLifecycleListener implements Listener {
             EntityDamageEvent.DamageCause.LAVA,
             EntityDamageEvent.DamageCause.FIRE,
             EntityDamageEvent.DamageCause.FIRE_TICK,
-            EntityDamageEvent.DamageCause.HOT_FLOOR
+            EntityDamageEvent.DamageCause.HOT_FLOOR,
+            EntityDamageEvent.DamageCause.VOID
     );
 
     private final JavaPlugin plugin;

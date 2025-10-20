@@ -8,11 +8,11 @@ import dev.crystalmath.amethyst.commands.RedeemAllCommand;
 import dev.crystalmath.amethyst.commands.RedeemCommand;
 import dev.crystalmath.amethyst.commands.SpawnCrystalsCommand;
 import dev.crystalmath.amethyst.commands.SupplyCommand;
+import dev.crystalmath.amethyst.listeners.BeaconCraftListener;
 import dev.crystalmath.amethyst.listeners.CrystalLifecycleListener;
 import dev.crystalmath.amethyst.listeners.FortuneListener;
 import dev.crystalmath.amethyst.listeners.GrowthListener;
 import dev.crystalmath.amethyst.gui.AreaAdminGui;
-import dev.crystalmath.amethyst.util.MintedCrystalRecipeChoice;
 import dev.crystalmath.claims.ClaimAdminCommand;
 import dev.crystalmath.claims.ClaimManager;
 import dev.crystalmath.claims.ClaimProtectionListener;
@@ -24,6 +24,7 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
+import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -38,12 +39,14 @@ public class CrystalMathPlugin extends JavaPlugin {
     private ClaimManager claimManager;
     private AdminGui adminGui;
     private AreaAdminGui areaAdminGui;
+    private NamespacedKey beaconRecipeKey;
 
     @Override
     public void onEnable() {
         saveDefaultConfig();
 
         mintedCrystalKey = new NamespacedKey(this, "minted-crystal");
+        beaconRecipeKey = new NamespacedKey(this, "beacon");
         ledger = new MintLedger(this);
         try {
             ledger.initialize();
@@ -58,6 +61,7 @@ public class CrystalMathPlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new FortuneListener(this, ledger, mintedCrystalKey), this);
         Bukkit.getPluginManager().registerEvents(new CrystalLifecycleListener(this, ledger, mintedCrystalKey), this);
         Bukkit.getPluginManager().registerEvents(new GrowthListener(), this);
+        Bukkit.getPluginManager().registerEvents(new BeaconCraftListener(this, ledger, mintedCrystalKey, beaconRecipeKey), this);
 
         registerExecutor("claimarea", new ClaimAreaCommand(this, ledger, areaManager));
         registerExecutor("spawncrystals", new SpawnCrystalsCommand(this, ledger, areaManager));
@@ -119,12 +123,12 @@ public class CrystalMathPlugin extends JavaPlugin {
         removeVanillaBeacon();
 
         ItemStack result = new ItemStack(Material.BEACON);
-        ShapedRecipe recipe = new ShapedRecipe(new NamespacedKey(this, "beacon"), result);
+        ShapedRecipe recipe = new ShapedRecipe(beaconRecipeKey, result);
         recipe.shape("GMG", "GCG", "OOO");
         recipe.setIngredient('G', Material.GLASS);
         recipe.setIngredient('O', Material.OBSIDIAN);
 
-        MintedCrystalRecipeChoice mintedCrystal = new MintedCrystalRecipeChoice(mintedCrystalKey);
+        RecipeChoice.MaterialChoice mintedCrystal = new RecipeChoice.MaterialChoice(Material.AMETHYST_SHARD);
         recipe.setIngredient('C', mintedCrystal);
         recipe.setIngredient('M', mintedCrystal);
 

@@ -22,6 +22,8 @@ public class MintLedger {
     public static final String STATUS_HELD = "HELD";
     public static final String STATUS_LOST = "LOST";
     public static final String STATUS_REDEEMED = "REDEEMED";
+    public static final String EVENT_REDEEMED = "REDEEMED";
+    public static final String EVENT_CRAFT_BEACON = "CRAFT_BEACON";
 
     private final JavaPlugin plugin;
     private Connection connection;
@@ -67,6 +69,17 @@ public class MintLedger {
                 statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_crystals_location ON crystals(world, x, y, z)");
                 statement.executeUpdate("UPDATE crystals SET status = 'ACTIVE' WHERE status = 'active'");
                 statement.executeUpdate("UPDATE crystals SET status = 'REDEEMED' WHERE status = 'closed'");
+                statement.executeUpdate("""
+                        CREATE TABLE IF NOT EXISTS crystal_events (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            crystal_uuid TEXT NOT NULL,
+                            event_type TEXT NOT NULL,
+                            details TEXT,
+                            occurred_at INTEGER NOT NULL,
+                            FOREIGN KEY (crystal_uuid) REFERENCES crystals(uuid) ON DELETE CASCADE
+                        )
+                        """);
+                statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_crystal_events_crystal ON crystal_events(crystal_uuid)");
                 statement.executeUpdate("""
                         CREATE TABLE IF NOT EXISTS areas (
                             id TEXT PRIMARY KEY,
@@ -305,7 +318,15 @@ public class MintLedger {
     }
 
     public synchronized boolean markRedeemed(UUID uuid) {
-        return updateStatus(uuid, STATUS_REDEEMED, null, STATUS_HELD);
+        return markRedeemed(uuid, EVENT_REDEEMED, null);
+    }
+
+    public synchronized boolean markRedeemed(UUID uuid, String eventType, String details) {
+        boolean updated = updateStatus(uuid, STATUS_REDEEMED, null, STATUS_HELD);
+        if (updated) {
+            recordEvent(uuid, eventType == null ? EVENT_REDEEMED : eventType, details);
+        }
+        return updated;
     }
 
     public synchronized SupplySnapshot countByStatus() {
@@ -397,6 +418,29 @@ public class MintLedger {
             return statement.executeUpdate() > 0;
         } catch (SQLException exception) {
             throw new LedgerException("Unable to update ledger entry status", exception);
+        }
+    }
+
+    private void recordEvent(UUID uuid, String eventType, String details) {
+        ensureConnection();
+
+        long now = Instant.now().getEpochSecond();
+
+        try (PreparedStatement statement = connection.prepareStatement("""
+                INSERT INTO crystal_events (crystal_uuid, event_type, details, occurred_at)
+                VALUES (?, ?, ?, ?)
+                """)) {
+            statement.setString(1, uuid.toString());
+            statement.setString(2, eventType);
+            if (details == null) {
+                statement.setNull(3, Types.VARCHAR);
+            } else {
+                statement.setString(3, details);
+            }
+            statement.setLong(4, now);
+            statement.executeUpdate();
+        } catch (SQLException exception) {
+            plugin.getLogger().warning("Failed to log ledger event for crystal " + uuid + ": " + exception.getMessage());
         }
     }
 
