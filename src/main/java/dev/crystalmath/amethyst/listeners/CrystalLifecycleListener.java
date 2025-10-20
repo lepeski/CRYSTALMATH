@@ -1,0 +1,206 @@
+package dev.crystalmath.amethyst.listeners;
+
+import dev.crystalmath.amethyst.MintLedger;
+import dev.crystalmath.amethyst.util.MintedCrystalUtil;
+import io.papermc.paper.event.entity.EntityRemoveEvent;
+import io.papermc.paper.event.entity.EntityRemoveFromWorldEvent;
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
+import org.bukkit.Material;
+import org.bukkit.NamespacedKey;
+import org.bukkit.block.Block;
+import org.bukkit.entity.Item;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.EventPriority;
+import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockExplodeEvent;
+import org.bukkit.event.block.BlockFadeEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.entity.ItemDespawnEvent;
+import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.inventory.ItemStack;
+import org.bukkit.plugin.java.JavaPlugin;
+
+import java.util.Collection;
+import java.util.EnumSet;
+import java.util.HashSet;
+import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+
+public class CrystalLifecycleListener implements Listener {
+    private static final EnumSet<EntityDamageEvent.DamageCause> FIRE_CAUSES = EnumSet.of(
+            EntityDamageEvent.DamageCause.LAVA,
+            EntityDamageEvent.DamageCause.FIRE,
+            EntityDamageEvent.DamageCause.FIRE_TICK,
+            EntityDamageEvent.DamageCause.HOT_FLOOR
+    );
+
+    private final JavaPlugin plugin;
+    private final MintLedger ledger;
+    private final NamespacedKey crystalKey;
+
+    public CrystalLifecycleListener(JavaPlugin plugin, MintLedger ledger, NamespacedKey crystalKey) {
+        this.plugin = plugin;
+        this.ledger = ledger;
+        this.crystalKey = crystalKey;
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
+    public void onBlockFade(BlockFadeEvent event) {
+        Block block = event.getBlock();
+        if (block.getType() != Material.AMETHYST_CLUSTER) {
+            return;
+        }
+
+        markLostAtLocation(block.getLocation());
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
+    public void onBlockExplode(BlockExplodeEvent event) {
+        for (Block block : event.blockList()) {
+            if (block.getType() == Material.AMETHYST_CLUSTER) {
+                markLostAtLocation(block.getLocation());
+            }
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
+    public void onEntityExplode(EntityExplodeEvent event) {
+        for (Block block : event.blockList()) {
+            if (block.getType() == Material.AMETHYST_CLUSTER) {
+                markLostAtLocation(block.getLocation());
+            }
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerDropItem(PlayerDropItemEvent event) {
+        Item item = event.getItemDrop();
+        refreshMintedMetadata(item.getItemStack());
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onPlayerDeath(PlayerDeathEvent event) {
+        for (ItemStack stack : event.getDrops()) {
+            refreshMintedMetadata(stack);
+        }
+
+        if (event.getKeepInventory()) {
+            return;
+        }
+
+        EntityDamageEvent lastDamage = event.getEntity().getLastDamageCause();
+        if (lastDamage != null && lastDamage.getCause() == EntityDamageEvent.DamageCause.VOID) {
+            Location location = event.getEntity().getLocation().clone();
+            markLostStacks(event.getDrops(), location);
+        }
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onItemDespawn(ItemDespawnEvent event) {
+        Item item = event.getEntity();
+        Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(item.getItemStack(), crystalKey);
+        uuidOptional.ifPresent(uuid -> markLost(uuid, item.getLocation().clone()));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onItemDamage(EntityDamageEvent event) {
+        if (!(event.getEntity() instanceof Item item)) {
+            return;
+        }
+
+        if (!FIRE_CAUSES.contains(event.getCause())) {
+            return;
+        }
+
+        Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(item.getItemStack(), crystalKey);
+        uuidOptional.ifPresent(uuid -> markLost(uuid, item.getLocation().clone()));
+    }
+
+    @EventHandler(priority = EventPriority.MONITOR)
+    public void onItemRemoved(EntityRemoveFromWorldEvent event) {
+        if (!(event.getEntity() instanceof Item item)) {
+            return;
+        }
+
+        if (event.getCause() != EntityRemoveEvent.Cause.VOID) {
+            return;
+        }
+
+        Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(item.getItemStack(), crystalKey);
+        uuidOptional.ifPresent(uuid -> markLost(uuid, item.getLocation().clone()));
+    }
+
+    private void markLostAtLocation(Location location) {
+        Location snapshot = location.clone();
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            Optional<MintLedger.LedgerEntry> entryOptional;
+            try {
+                entryOptional = ledger.findActiveByLocation(snapshot);
+            } catch (MintLedger.LedgerException exception) {
+                plugin.getLogger().warning("Failed to lookup crystal at " + snapshot + ": " + exception.getMessage());
+                return;
+            }
+
+            if (entryOptional.isEmpty()) {
+                return;
+            }
+
+            UUID uuid = entryOptional.get().uuid();
+            try {
+                ledger.markLost(uuid, snapshot);
+            } catch (MintLedger.LedgerException exception) {
+                plugin.getLogger().warning("Failed to update crystal " + uuid + " to LOST: " + exception.getMessage());
+            }
+        });
+    }
+
+    private void markLost(UUID uuid) {
+        markLost(uuid, null);
+    }
+
+    private void markLost(UUID uuid, Location location) {
+        Location snapshot = location == null ? null : location.clone();
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                ledger.markLost(uuid, snapshot);
+            } catch (MintLedger.LedgerException exception) {
+                plugin.getLogger().warning("Failed to update crystal " + uuid + " to LOST: " + exception.getMessage());
+            }
+        });
+    }
+
+    private void refreshMintedMetadata(ItemStack stack) {
+        Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(stack, crystalKey);
+        uuidOptional.ifPresent(uuid -> MintedCrystalUtil.applyMetadata(stack, uuid, crystalKey));
+    }
+
+    private void markLostStacks(Collection<ItemStack> stacks, Location location) {
+        if (stacks == null || stacks.isEmpty()) {
+            return;
+        }
+
+        Set<UUID> lost = new HashSet<>();
+        for (ItemStack stack : stacks) {
+            MintedCrystalUtil.readLedgerId(stack, crystalKey).ifPresent(lost::add);
+        }
+
+        if (lost.isEmpty()) {
+            return;
+        }
+
+        Location snapshot = location == null ? null : location.clone();
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            for (UUID uuid : lost) {
+                try {
+                    ledger.markLost(uuid, snapshot);
+                } catch (MintLedger.LedgerException exception) {
+                    plugin.getLogger().warning("Failed to update crystal " + uuid + " to LOST: " + exception.getMessage());
+                }
+            }
+        });
+    }
+}
