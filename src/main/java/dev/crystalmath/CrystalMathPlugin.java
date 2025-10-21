@@ -133,12 +133,17 @@ public class CrystalMathPlugin extends JavaPlugin {
 
         ItemStack result = new ItemStack(Material.BEACON);
         ShapedRecipe recipe = new ShapedRecipe(beaconRecipeKey, result);
-        recipe.shape("GMG", "GCG", "OMO");
+        // Layout:
+        // G M G
+        // G N G
+        // O O O
+        // (M and N represent minted crystals validated during crafting.)
+        recipe.shape("GMG", "GNG", "OOO");
         recipe.setIngredient('G', Material.GLASS);
         recipe.setIngredient('O', Material.OBSIDIAN);
 
-        recipe.setIngredient('M', Material.DIAMOND);
-        recipe.setIngredient('C', Material.DIAMOND);
+        recipe.setIngredient('M', Material.AMETHYST_SHARD);
+        recipe.setIngredient('N', Material.AMETHYST_SHARD);
 
         boolean registered = Bukkit.addRecipe(recipe);
         if (!registered) {

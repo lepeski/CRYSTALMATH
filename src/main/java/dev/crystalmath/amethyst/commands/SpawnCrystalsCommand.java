@@ -175,9 +175,34 @@ public class SpawnCrystalsCommand implements CommandExecutor {
             }
 
             int spawnedCount = 0;
+            int reclaimedCount = 0;
             for (PlacementTarget target : potential) {
                 Block block = target.block;
                 BlockFace direction = target.direction;
+
+                if (block.getType() != Material.AIR) {
+                    continue;
+                }
+
+                Location location = block.getLocation();
+                try {
+                    Optional<MintLedger.LedgerEntry> existing = ledger.findActiveByLocation(location);
+                    if (existing.isPresent()) {
+                        MintLedger.LedgerEntry entry = existing.get();
+                        boolean cleared = ledger.markLostWithEvent(entry.uuid(), location,
+                                MintLedger.EVENT_RESPAWN_REPAIR,
+                                "Area=" + area.id() + ", Location=" + describeLocation(location));
+                        if (cleared) {
+                            reclaimedCount++;
+                        } else {
+                            continue;
+                        }
+                    }
+                } catch (MintLedger.LedgerException exception) {
+                    plugin.getLogger().log(Level.WARNING, "Failed to query ledger for existing crystal", exception);
+                    failures.add(ChatColor.RED + "Unable to verify existing crystal at " + location.toVector() + " in area [" + area.id() + "].");
+                    continue;
+                }
 
                 block.setType(Material.AMETHYST_CLUSTER);
                 BlockData data = Bukkit.createBlockData(Material.AMETHYST_CLUSTER);
@@ -187,7 +212,6 @@ public class SpawnCrystalsCommand implements CommandExecutor {
                     block.setBlockData(directional);
                 }
 
-                Location location = block.getLocation();
                 if (block.getType() != Material.AMETHYST_CLUSTER) {
                     failures.add(ChatColor.RED + "Unable to place a crystal in area [" + area.id() + "] at " + location.toVector());
                     continue;
@@ -212,6 +236,10 @@ public class SpawnCrystalsCommand implements CommandExecutor {
             }
 
             sender.sendMessage(ChatColor.GREEN + "Spawned " + spawnedCount + " amethyst crystals in area [" + area.id() + "].");
+            if (reclaimedCount > 0) {
+                sender.sendMessage(ChatColor.YELLOW + "Reclaimed " + reclaimedCount + " stale ledger entr" +
+                        (reclaimedCount == 1 ? "y" : "ies") + " while spawning new crystals.");
+            }
         }
 
         if (!failures.isEmpty()) {
@@ -221,5 +249,9 @@ public class SpawnCrystalsCommand implements CommandExecutor {
         }
 
         return true;
+    }
+
+    private String describeLocation(Location location) {
+        return location.getWorld().getName() + ":" + location.getBlockX() + "," + location.getBlockY() + "," + location.getBlockZ();
     }
 }

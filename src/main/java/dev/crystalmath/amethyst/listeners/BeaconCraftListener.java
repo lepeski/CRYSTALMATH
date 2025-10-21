@@ -28,6 +28,9 @@ import java.util.UUID;
  * Tracks crafted beacons so the ledger can redeem consumed crystals.
  */
 public class BeaconCraftListener implements Listener {
+    private static final int TOP_CENTER_SLOT = 1;
+    private static final int CENTER_SLOT = 4;
+
     private final JavaPlugin plugin;
     private final MintLedger ledger;
     private final NamespacedKey crystalKey;
@@ -42,34 +45,31 @@ public class BeaconCraftListener implements Listener {
 
     @EventHandler(priority = EventPriority.NORMAL)
     public void onPrepareBeacon(PrepareItemCraftEvent event) {
-        if (!isTargetRecipe(event.getRecipe())) {
+        CraftingInventory inventory = event.getInventory();
+        ItemStack[] matrix = inventory.getMatrix();
+        if (matchesBeaconLayout(matrix)) {
+            inventory.setResult(new ItemStack(Material.BEACON));
             return;
         }
 
-        CraftingInventory inventory = event.getInventory();
-        ItemStack[] matrix = inventory.getMatrix();
-        if (hasRequiredDiamonds(matrix)) {
-            inventory.setResult(new ItemStack(Material.BEACON));
-        } else {
+        if (isTargetRecipe(event.getRecipe())) {
             inventory.setResult(null);
         }
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
     public void onBeaconCraft(CraftItemEvent event) {
-        if (!isTargetRecipe(event.getRecipe())) {
-            return;
-        }
-
         CraftingInventory inventory = event.getInventory();
         ItemStack[] matrix = inventory.getMatrix();
-        if (!hasRequiredDiamonds(matrix)) {
-            event.setCancelled(true);
-            HumanEntity who = event.getWhoClicked();
-            if (who instanceof Player player) {
-                player.sendMessage(ChatColor.RED + "Three diamonds are required to craft a beacon.");
+        if (!matchesBeaconLayout(matrix)) {
+            if (isTargetRecipe(event.getRecipe())) {
+                event.setCancelled(true);
+                HumanEntity who = event.getWhoClicked();
+                if (who instanceof Player player) {
+                    player.sendMessage(ChatColor.RED + "Two minted crystals are required to craft a beacon.");
+                }
+                inventory.setResult(null);
             }
-            inventory.setResult(null);
             return;
         }
 
@@ -104,26 +104,46 @@ public class BeaconCraftListener implements Listener {
                 + ", Z=" + location.getBlockZ();
     }
 
-    private boolean hasRequiredDiamonds(ItemStack[] matrix) {
+    private boolean matchesBeaconLayout(ItemStack[] matrix) {
         if (!hasRequiredSlots(matrix)) {
             return false;
         }
 
-        return isDiamond(matrix[1]) && isDiamond(matrix[4]) && isDiamond(matrix[7]);
+        return isGlass(matrix[0])
+                && isMintedCrystal(matrix[TOP_CENTER_SLOT])
+                && isGlass(matrix[2])
+                && isGlass(matrix[3])
+                && isMintedCrystal(matrix[CENTER_SLOT])
+                && isGlass(matrix[5])
+                && isObsidian(matrix[6])
+                && isObsidian(matrix[7])
+                && isObsidian(matrix[8]);
     }
 
     private boolean hasRequiredSlots(ItemStack[] matrix) {
-        return matrix != null && matrix.length >= 8;
+        return matrix != null && matrix.length >= 9;
     }
 
-    private boolean isDiamond(ItemStack stack) {
-        return stack != null && stack.getType() == Material.DIAMOND;
+    private boolean isGlass(ItemStack stack) {
+        return isMaterial(stack, Material.GLASS);
+    }
+
+    private boolean isObsidian(ItemStack stack) {
+        return isMaterial(stack, Material.OBSIDIAN);
+    }
+
+    private boolean isMaterial(ItemStack stack, Material material) {
+        return stack != null && stack.getType() == material;
+    }
+
+    private boolean isMintedCrystal(ItemStack stack) {
+        return MintedCrystalUtil.readLedgerId(stack, crystalKey).isPresent();
     }
 
     private List<UUID> collectMintedIds(ItemStack[] matrix) {
         List<UUID> consumed = new ArrayList<>(2);
-        addMintedId(consumed, matrix, 1);
-        addMintedId(consumed, matrix, 7);
+        addMintedId(consumed, matrix, TOP_CENTER_SLOT);
+        addMintedId(consumed, matrix, CENTER_SLOT);
         return consumed;
     }
 
