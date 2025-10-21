@@ -55,7 +55,7 @@ public class BeaconAuraManager implements Runnable {
             }
 
             int amplifier = tier.getAuraAmplifier();
-            PotionEffect effect = new PotionEffect(PotionEffectType.DAMAGE_RESISTANCE, EFFECT_DURATION, amplifier, true, false, true);
+            PotionEffect effect = new PotionEffect(PotionEffectType.RESISTANCE, EFFECT_DURATION, amplifier, true, false, true);
             player.addPotionEffect(effect);
         }
     }
