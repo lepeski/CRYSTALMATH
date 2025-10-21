@@ -1,0 +1,67 @@
+name: crystalmath
+version: '${version}'
+main: dev.crystalmath.CrystalMathPlugin
+description: Combined amethyst control and land claiming plugin
+authors:
+  - CrystalMath Team
+api-version: '1.21'
+commands:
+  claimarea:
+    description: Claims chunks around the player, spawns geodes, and registers a minting area.
+    usage: /claimarea <areaId> <targetCrystals> <radiusInChunks> <geodeCount>
+    permission: amethystcontrol.claimarea
+    permission-message: You do not have permission to use this command.
+  spawncrystals:
+    description: Spawns amethyst crystals manually.
+    usage: /spawncrystals
+    permission: amethystcontrol.spawn
+    permission-message: You do not have permission to use this command.
+  supply:
+    description: Shows the count of minted crystals by lifecycle status.
+    usage: /supply
+    permission: amethystcontrol.supply
+    permission-message: You do not have permission to use this command.
+  redeem:
+    description: Burns the minted crystal in your hand and marks it as redeemed in the ledger.
+    usage: /redeem
+    permission: amethystcontrol.redeem
+    permission-message: You do not have permission to use this command.
+  redeemall:
+    description: Burns every minted crystal in your inventory and marks them as redeemed in the ledger.
+    usage: /redeemall
+    permission: amethystcontrol.redeemall
+    permission-message: You do not have permission to use this command.
+  crystalaudit:
+    description: Compares minted crystals in the world against the ledger supply.
+    usage: /crystalaudit
+    permission: amethystcontrol.audit
+    permission-message: You do not have permission to use this command.
+  areaadmin:
+    description: Opens the crystal mint area administration panel.
+    permission: amethystcontrol.areaadmin
+    permission-message: You do not have permission to use this command.
+  claimadmin:
+    description: Opens the claim administration panel
+    permission: claimer.admin
+    permission-message: You do not have permission to use this command.
+permissions:
+  amethystcontrol.claimarea:
+    default: op
+  amethystcontrol.spawn:
+    default: op
+  amethystcontrol.supply:
+    default: true
+  amethystcontrol.redeem:
+    default: op
+  amethystcontrol.redeemall:
+    default: op
+  amethystcontrol.audit:
+    default: op
+  amethystcontrol.areaadmin:
+    default: op
+  claimer.admin:
+    description: Allows managing all claims
+    default: op
+  claimer.bypass:
+    description: Allows bypassing claim protections
+    default: false
