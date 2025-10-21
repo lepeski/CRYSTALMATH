@@ -6,6 +6,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.entity.Item;
 import org.bukkit.event.EventHandler;
@@ -43,17 +44,21 @@ public class CrystalLifecycleListener implements Listener {
             EntityDamageEvent.DamageCause.HOT_FLOOR
     );
 
+    private static final double VOID_THRESHOLD_Y = -60.0;
+
     private final JavaPlugin plugin;
     private final MintLedger ledger;
     private final NamespacedKey crystalKey;
     private final Map<Integer, TrackedItem> trackedItems = new HashMap<>();
     private final BukkitTask voidWatchTask;
+    private final BukkitTask voidSweepTask;
 
     public CrystalLifecycleListener(JavaPlugin plugin, MintLedger ledger, NamespacedKey crystalKey) {
         this.plugin = plugin;
         this.ledger = ledger;
         this.crystalKey = crystalKey;
         this.voidWatchTask = Bukkit.getScheduler().runTaskTimer(plugin, this::pollTrackedItems, 20L, 20L);
+        this.voidSweepTask = Bukkit.getScheduler().runTaskTimer(plugin, this::scanForVoidLoss, 10L, 10L);
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.MONITOR)
@@ -112,7 +117,15 @@ public class CrystalLifecycleListener implements Listener {
     public void onItemDespawn(ItemDespawnEvent event) {
         Item item = event.getEntity();
         Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(item.getItemStack(), crystalKey);
-        uuidOptional.ifPresent(uuid -> markLost(uuid, item.getLocation().clone()));
+        if (uuidOptional.isPresent()) {
+            UUID uuid = uuidOptional.get();
+            Location snapshot = item.getLocation().clone();
+            if (isVoid(snapshot)) {
+                markVoidLoss(uuid, snapshot);
+            } else {
+                markLost(uuid, snapshot);
+            }
+        }
         stopTracking(item);
     }
 
@@ -129,7 +142,15 @@ public class CrystalLifecycleListener implements Listener {
         }
 
         Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(item.getItemStack(), crystalKey);
-        uuidOptional.ifPresent(uuid -> markLost(uuid, item.getLocation().clone()));
+        if (uuidOptional.isPresent()) {
+            UUID uuid = uuidOptional.get();
+            Location snapshot = item.getLocation().clone();
+            if (cause == EntityDamageEvent.DamageCause.VOID) {
+                markVoidLoss(uuid, snapshot);
+            } else {
+                markLost(uuid, snapshot);
+            }
+        }
         stopTracking(item);
     }
 
@@ -151,6 +172,9 @@ public class CrystalLifecycleListener implements Listener {
     public void shutdown() {
         if (voidWatchTask != null) {
             voidWatchTask.cancel();
+        }
+        if (voidSweepTask != null) {
+            voidSweepTask.cancel();
         }
         trackedItems.clear();
     }
@@ -223,7 +247,7 @@ public class CrystalLifecycleListener implements Listener {
 
             if (!item.isValid() || item.isDead()) {
                 if (tracked.lastKnownLocation != null && isVoid(tracked.lastKnownLocation)) {
-                    markLost(tracked.uuid, tracked.lastKnownLocation);
+                    markVoidLoss(tracked.uuid, tracked.lastKnownLocation);
                 }
                 iterator.remove();
                 continue;
@@ -232,14 +256,14 @@ public class CrystalLifecycleListener implements Listener {
             Location current = item.getLocation();
             tracked.lastKnownLocation = current.clone();
             if (isVoid(current)) {
-                markLost(tracked.uuid, current);
+                markVoidLoss(tracked.uuid, current);
                 iterator.remove();
             }
         }
     }
 
     private boolean isVoid(Location location) {
-        return location.getWorld() != null && location.getY() < location.getWorld().getMinHeight();
+        return location.getWorld() != null && location.getY() < VOID_THRESHOLD_Y;
     }
 
     private void markLostStacks(Collection<ItemStack> stacks, Location location) {
@@ -257,15 +281,75 @@ public class CrystalLifecycleListener implements Listener {
         }
 
         Location snapshot = location == null ? null : location.clone();
+        boolean voidLoss = snapshot != null && isVoid(snapshot);
+        for (UUID uuid : lost) {
+            if (voidLoss) {
+                markVoidLoss(uuid, snapshot);
+            } else {
+                markLost(uuid, snapshot);
+            }
+        }
+    }
+
+    private void scanForVoidLoss() {
+        Map<UUID, Location> voidLosses = new HashMap<>();
+        for (World world : Bukkit.getWorlds()) {
+            for (Item item : world.getEntitiesByClass(Item.class)) {
+                Location location = item.getLocation();
+                if (location.getY() >= VOID_THRESHOLD_Y) {
+                    continue;
+                }
+
+                Optional<UUID> uuidOptional = MintedCrystalUtil.readLedgerId(item.getItemStack(), crystalKey);
+                if (uuidOptional.isEmpty()) {
+                    continue;
+                }
+
+                UUID uuid = uuidOptional.get();
+                Location snapshot = location.clone();
+                voidLosses.put(uuid, snapshot);
+                item.remove();
+                stopTracking(item);
+            }
+        }
+
+        if (voidLosses.isEmpty()) {
+            return;
+        }
+
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            for (UUID uuid : lost) {
+            for (Map.Entry<UUID, Location> entry : voidLosses.entrySet()) {
                 try {
-                    ledger.markLost(uuid, snapshot);
+                    ledger.markLostWithEvent(entry.getKey(), entry.getValue(), MintLedger.EVENT_VOID_LOSS,
+                            describeLocation(entry.getValue()));
                 } catch (MintLedger.LedgerException exception) {
-                    plugin.getLogger().warning("Failed to update crystal " + uuid + " to LOST: " + exception.getMessage());
+                    plugin.getLogger().warning("Failed to update crystal " + entry.getKey()
+                            + " after void sweep: " + exception.getMessage());
                 }
             }
         });
+    }
+
+    private void markVoidLoss(UUID uuid, Location location) {
+        Location snapshot = location == null ? null : location.clone();
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            try {
+                ledger.markLostWithEvent(uuid, snapshot, MintLedger.EVENT_VOID_LOSS, describeLocation(snapshot));
+            } catch (MintLedger.LedgerException exception) {
+                plugin.getLogger().warning("Failed to update crystal " + uuid + " for void loss: " + exception.getMessage());
+            }
+        });
+    }
+
+    private String describeLocation(Location location) {
+        if (location == null || location.getWorld() == null) {
+            return "Void loss";
+        }
+
+        return "World=" + location.getWorld().getName()
+                + ", X=" + location.getBlockX()
+                + ", Y=" + location.getBlockY()
+                + ", Z=" + location.getBlockZ();
     }
 
     private static final class TrackedItem {

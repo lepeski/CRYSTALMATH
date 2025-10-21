@@ -189,6 +189,19 @@ public class CrystalAuditCommand implements CommandExecutor {
             }
         }
 
+        try {
+            for (MintLedger.OfflineHolding holding : ledger.listOfflineHoldings()) {
+                String playerName = holding.playerName();
+                UUID playerUuid = holding.playerUuid();
+                String identifier = playerName != null ? playerName : (playerUuid == null ? "Unknown player" : playerUuid.toString());
+                String details = holding.details();
+                String context = "Offline player " + identifier + (details == null || details.isEmpty() ? "" : " - " + details);
+                contexts.computeIfAbsent(holding.crystalUuid(), key -> new ArrayList<>()).add(context);
+            }
+        } catch (MintLedger.LedgerException exception) {
+            return AuditReport.failure("Unable to read offline crystal holdings: " + exception.getMessage());
+        }
+
         return AuditReport.success(confirmedActive, missingActive, unloadedActive, contexts);
     }
 
@@ -288,7 +301,7 @@ public class CrystalAuditCommand implements CommandExecutor {
             }
         }
 
-        sender.sendMessage(ChatColor.GRAY + "Audit complete. Only online players, dropped items, and loaded containers were inspected.");
+        sender.sendMessage(ChatColor.GRAY + "Audit complete. Online players, offline inventories, dropped items, and loaded containers were inspected.");
     }
 
     private String formatLedgerLocation(MintLedger.LedgerEntry entry) {

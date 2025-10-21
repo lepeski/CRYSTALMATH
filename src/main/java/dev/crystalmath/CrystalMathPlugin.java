@@ -13,6 +13,7 @@ import dev.crystalmath.amethyst.listeners.BeaconCraftListener;
 import dev.crystalmath.amethyst.listeners.CrystalLifecycleListener;
 import dev.crystalmath.amethyst.listeners.FortuneListener;
 import dev.crystalmath.amethyst.listeners.GrowthListener;
+import dev.crystalmath.amethyst.listeners.OfflineCrystalListener;
 import dev.crystalmath.amethyst.gui.AreaAdminGui;
 import dev.crystalmath.claims.ClaimAdminCommand;
 import dev.crystalmath.claims.ClaimManager;
@@ -25,7 +26,6 @@ import org.bukkit.command.CommandExecutor;
 import org.bukkit.command.PluginCommand;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.Recipe;
-import org.bukkit.inventory.RecipeChoice;
 import org.bukkit.inventory.ShapedRecipe;
 import org.bukkit.plugin.java.JavaPlugin;
 
@@ -63,6 +63,7 @@ public class CrystalMathPlugin extends JavaPlugin {
         Bukkit.getPluginManager().registerEvents(new FortuneListener(this, ledger, mintedCrystalKey), this);
         lifecycleListener = new CrystalLifecycleListener(this, ledger, mintedCrystalKey);
         Bukkit.getPluginManager().registerEvents(lifecycleListener, this);
+        Bukkit.getPluginManager().registerEvents(new OfflineCrystalListener(this, ledger, mintedCrystalKey), this);
         Bukkit.getPluginManager().registerEvents(new GrowthListener(), this);
         Bukkit.getPluginManager().registerEvents(new BeaconCraftListener(this, ledger, mintedCrystalKey, beaconRecipeKey), this);
 
@@ -132,13 +133,12 @@ public class CrystalMathPlugin extends JavaPlugin {
 
         ItemStack result = new ItemStack(Material.BEACON);
         ShapedRecipe recipe = new ShapedRecipe(beaconRecipeKey, result);
-        recipe.shape("GMG", "GCG", "OOO");
+        recipe.shape("GMG", "GCG", "OMO");
         recipe.setIngredient('G', Material.GLASS);
         recipe.setIngredient('O', Material.OBSIDIAN);
 
-        RecipeChoice.MaterialChoice mintedCrystal = new RecipeChoice.MaterialChoice(Material.AMETHYST_SHARD);
-        recipe.setIngredient('C', mintedCrystal);
-        recipe.setIngredient('M', mintedCrystal);
+        recipe.setIngredient('M', Material.DIAMOND);
+        recipe.setIngredient('C', Material.DIAMOND);
 
         boolean registered = Bukkit.addRecipe(recipe);
         if (!registered) {

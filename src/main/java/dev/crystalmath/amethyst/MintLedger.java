@@ -24,6 +24,7 @@ public class MintLedger {
     public static final String STATUS_REDEEMED = "REDEEMED";
     public static final String EVENT_REDEEMED = "REDEEMED";
     public static final String EVENT_CRAFT_BEACON = "CRAFT_BEACON";
+    public static final String EVENT_VOID_LOSS = "VOID_LOSS";
 
     private final JavaPlugin plugin;
     private Connection connection;
@@ -80,6 +81,17 @@ public class MintLedger {
                         )
                         """);
                 statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_crystal_events_crystal ON crystal_events(crystal_uuid)");
+                statement.executeUpdate("""
+                        CREATE TABLE IF NOT EXISTS offline_crystals (
+                            crystal_uuid TEXT PRIMARY KEY,
+                            player_uuid TEXT NOT NULL,
+                            player_name TEXT,
+                            details TEXT,
+                            recorded_at INTEGER NOT NULL,
+                            FOREIGN KEY (crystal_uuid) REFERENCES crystals(uuid) ON DELETE CASCADE
+                        )
+                        """);
+                statement.executeUpdate("CREATE INDEX IF NOT EXISTS idx_offline_crystals_player ON offline_crystals(player_uuid)");
                 statement.executeUpdate("""
                         CREATE TABLE IF NOT EXISTS areas (
                             id TEXT PRIMARY KEY,
@@ -314,7 +326,19 @@ public class MintLedger {
     }
 
     public synchronized boolean markLost(UUID uuid, Location location) {
-        return updateStatus(uuid, STATUS_LOST, location, STATUS_ACTIVE, STATUS_HELD);
+        boolean updated = updateStatus(uuid, STATUS_LOST, location, STATUS_ACTIVE, STATUS_HELD);
+        if (updated) {
+            clearOfflineHolding(uuid);
+        }
+        return updated;
+    }
+
+    public synchronized boolean markLostWithEvent(UUID uuid, Location location, String eventType, String details) {
+        boolean updated = markLost(uuid, location);
+        if (updated && eventType != null) {
+            recordEvent(uuid, eventType, details);
+        }
+        return updated;
     }
 
     public synchronized boolean markRedeemed(UUID uuid) {
@@ -324,6 +348,7 @@ public class MintLedger {
     public synchronized boolean markRedeemed(UUID uuid, String eventType, String details) {
         boolean updated = updateStatus(uuid, STATUS_REDEEMED, null, STATUS_HELD);
         if (updated) {
+            clearOfflineHolding(uuid);
             recordEvent(uuid, eventType == null ? EVENT_REDEEMED : eventType, details);
         }
         return updated;
@@ -460,6 +485,125 @@ public class MintLedger {
         }
     }
 
+    public synchronized void replaceOfflineHoldings(UUID playerUuid, String playerName, Map<UUID, List<String>> contexts) {
+        ensureConnection();
+
+        boolean previousAutoCommit;
+        try {
+            previousAutoCommit = connection.getAutoCommit();
+            connection.setAutoCommit(false);
+        } catch (SQLException exception) {
+            throw new LedgerException("Unable to configure database transaction for offline holdings", exception);
+        }
+
+        long now = Instant.now().getEpochSecond();
+
+        try (PreparedStatement delete = connection.prepareStatement("DELETE FROM offline_crystals WHERE player_uuid = ?")) {
+            delete.setString(1, playerUuid.toString());
+            delete.executeUpdate();
+
+            if (contexts != null && !contexts.isEmpty()) {
+                try (PreparedStatement insert = connection.prepareStatement("""
+                        INSERT INTO offline_crystals (crystal_uuid, player_uuid, player_name, details, recorded_at)
+                        VALUES (?, ?, ?, ?, ?)
+                        """)) {
+                    for (Map.Entry<UUID, List<String>> entry : contexts.entrySet()) {
+                        insert.setString(1, entry.getKey().toString());
+                        insert.setString(2, playerUuid.toString());
+                        if (playerName == null) {
+                            insert.setNull(3, Types.VARCHAR);
+                        } else {
+                            insert.setString(3, playerName);
+                        }
+
+                        String details = joinDetails(entry.getValue());
+                        if (details == null) {
+                            insert.setNull(4, Types.VARCHAR);
+                        } else {
+                            insert.setString(4, details);
+                        }
+
+                        insert.setLong(5, now);
+                        insert.addBatch();
+                    }
+
+                    insert.executeBatch();
+                }
+            }
+
+            connection.commit();
+        } catch (SQLException exception) {
+            try {
+                connection.rollback();
+            } catch (SQLException rollbackException) {
+                plugin.getLogger().warning("Failed to roll back offline holdings update: " + rollbackException.getMessage());
+            }
+            throw new LedgerException("Unable to update offline crystal holdings", exception);
+        } finally {
+            try {
+                connection.setAutoCommit(previousAutoCommit);
+            } catch (SQLException exception) {
+                plugin.getLogger().warning("Failed to restore auto-commit state: " + exception.getMessage());
+            }
+        }
+    }
+
+    public synchronized void clearOfflineHoldings(UUID playerUuid) {
+        ensureConnection();
+
+        try (PreparedStatement statement = connection.prepareStatement("DELETE FROM offline_crystals WHERE player_uuid = ?")) {
+            statement.setString(1, playerUuid.toString());
+            statement.executeUpdate();
+        } catch (SQLException exception) {
+            throw new LedgerException("Unable to clear offline holdings for player", exception);
+        }
+    }
+
+    public synchronized List<OfflineHolding> listOfflineHoldings() {
+        ensureConnection();
+
+        List<OfflineHolding> results = new ArrayList<>();
+
+        try (PreparedStatement statement = connection.prepareStatement("""
+                SELECT crystal_uuid, player_uuid, player_name, details
+                FROM offline_crystals
+                """)) {
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    UUID crystalUuid = UUID.fromString(resultSet.getString("crystal_uuid"));
+                    String playerUuid = resultSet.getString("player_uuid");
+                    UUID holderUuid = playerUuid == null ? null : UUID.fromString(playerUuid);
+                    String playerName = resultSet.getString("player_name");
+                    String details = resultSet.getString("details");
+                    results.add(new OfflineHolding(crystalUuid, holderUuid, playerName, details));
+                }
+            }
+        } catch (SQLException exception) {
+            throw new LedgerException("Unable to list offline crystal holdings", exception);
+        }
+
+        return results;
+    }
+
+    private void clearOfflineHolding(UUID uuid) {
+        ensureConnection();
+
+        try (PreparedStatement statement = connection.prepareStatement("DELETE FROM offline_crystals WHERE crystal_uuid = ?")) {
+            statement.setString(1, uuid.toString());
+            statement.executeUpdate();
+        } catch (SQLException exception) {
+            plugin.getLogger().warning("Failed to clear offline record for crystal " + uuid + ": " + exception.getMessage());
+        }
+    }
+
+    private String joinDetails(List<String> details) {
+        if (details == null || details.isEmpty()) {
+            return null;
+        }
+
+        return String.join("; ", details);
+    }
+
     private void recordEvent(UUID uuid, String eventType, String details) {
         ensureConnection();
 
@@ -535,6 +679,9 @@ public class MintLedger {
         public int total() {
             return active + held + lost + redeemed;
         }
+    }
+
+    public record OfflineHolding(UUID crystalUuid, UUID playerUuid, String playerName, String details) {
     }
 
     public enum CrystalStatus {

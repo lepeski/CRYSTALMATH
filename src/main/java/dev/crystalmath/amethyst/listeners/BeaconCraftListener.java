@@ -48,7 +48,7 @@ public class BeaconCraftListener implements Listener {
 
         CraftingInventory inventory = event.getInventory();
         ItemStack[] matrix = inventory.getMatrix();
-        if (hasMintedIngredients(matrix)) {
+        if (hasRequiredDiamonds(matrix)) {
             inventory.setResult(new ItemStack(Material.BEACON));
         } else {
             inventory.setResult(null);
@@ -63,30 +63,24 @@ public class BeaconCraftListener implements Listener {
 
         CraftingInventory inventory = event.getInventory();
         ItemStack[] matrix = inventory.getMatrix();
-        if (!hasMintedIngredients(matrix)) {
+        if (!hasRequiredDiamonds(matrix)) {
             event.setCancelled(true);
             HumanEntity who = event.getWhoClicked();
             if (who instanceof Player player) {
-                player.sendMessage(ChatColor.RED + "Two minted crystals are required to craft a beacon.");
+                player.sendMessage(ChatColor.RED + "Three diamonds are required to craft a beacon.");
             }
             inventory.setResult(null);
-            return;
-        }
-
-        List<UUID> consumed = collectMintedIds(matrix);
-        if (consumed.size() < 2) {
-            event.setCancelled(true);
-            inventory.setResult(null);
-            HumanEntity who = event.getWhoClicked();
-            if (who instanceof Player player) {
-                player.sendMessage(ChatColor.RED + "Unable to confirm the ledger IDs for the provided crystals.");
-            }
             return;
         }
 
         HumanEntity human = event.getWhoClicked();
         String crafter = human.getName();
         Location location = human.getLocation().clone();
+
+        List<UUID> consumed = collectMintedIds(matrix);
+        if (consumed.isEmpty()) {
+            return;
+        }
 
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
             for (UUID uuid : consumed) {
@@ -110,23 +104,26 @@ public class BeaconCraftListener implements Listener {
                 + ", Z=" + location.getBlockZ();
     }
 
-    private boolean hasMintedIngredients(ItemStack[] matrix) {
+    private boolean hasRequiredDiamonds(ItemStack[] matrix) {
         if (!hasRequiredSlots(matrix)) {
             return false;
         }
 
-        return MintedCrystalUtil.readLedgerId(matrix[1], crystalKey).isPresent()
-                && MintedCrystalUtil.readLedgerId(matrix[4], crystalKey).isPresent();
+        return isDiamond(matrix[1]) && isDiamond(matrix[4]) && isDiamond(matrix[7]);
     }
 
     private boolean hasRequiredSlots(ItemStack[] matrix) {
-        return matrix != null && matrix.length >= 5;
+        return matrix != null && matrix.length >= 8;
+    }
+
+    private boolean isDiamond(ItemStack stack) {
+        return stack != null && stack.getType() == Material.DIAMOND;
     }
 
     private List<UUID> collectMintedIds(ItemStack[] matrix) {
         List<UUID> consumed = new ArrayList<>(2);
         addMintedId(consumed, matrix, 1);
-        addMintedId(consumed, matrix, 4);
+        addMintedId(consumed, matrix, 7);
         return consumed;
     }
 
