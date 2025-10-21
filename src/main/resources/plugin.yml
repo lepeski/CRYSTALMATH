@@ -59,7 +59,7 @@ permissions:
   amethystcontrol.supply:
     default: true
   amethystcontrol.redeem:
-    default: op
+    default: true
   amethystcontrol.redeemall:
     default: op
   amethystcontrol.audit:

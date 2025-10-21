@@ -185,6 +185,22 @@ public class ClaimManager {
         return Optional.ofNullable(claimsByBeacon.get(key));
     }
 
+    public BeaconTier getBeaconTier(Claim claim) {
+        if (claim == null) {
+            return BeaconTier.NONE;
+        }
+        World world = Bukkit.getWorld(claim.getWorld());
+        if (world == null) {
+            return BeaconTier.NONE;
+        }
+        Block beaconBlock = world.getBlockAt(claim.getBeacon().getX(), claim.getBeacon().getY(), claim.getBeacon().getZ());
+        if (beaconBlock.getType() != Material.BEACON) {
+            return BeaconTier.NONE;
+        }
+        int ironLayers = countIronLayers(beaconBlock);
+        return BeaconTier.fromIronLayers(ironLayers);
+    }
+
     private void addClaimInternal(Claim claim, boolean announce) {
         claimsByBeacon.put(claim.getBeaconKey(), claim);
         for (ChunkPosition chunkPosition : computeIndexedChunks(claim)) {
@@ -196,6 +212,34 @@ public class ClaimManager {
                 owner.sendMessage("§aLand claim registered around the beacon.");
             }
         }
+    }
+
+    private int countIronLayers(Block beaconBlock) {
+        World world = beaconBlock.getWorld();
+        int layers = 0;
+        for (int level = 1; level <= 4; level++) {
+            int y = beaconBlock.getY() - level;
+            if (y < world.getMinHeight()) {
+                break;
+            }
+            int radius = level;
+            boolean fullLayer = true;
+            for (int x = beaconBlock.getX() - radius; x <= beaconBlock.getX() + radius && fullLayer; x++) {
+                for (int z = beaconBlock.getZ() - radius; z <= beaconBlock.getZ() + radius; z++) {
+                    Material type = world.getBlockAt(x, y, z).getType();
+                    if (type != Material.IRON_BLOCK) {
+                        fullLayer = false;
+                        break;
+                    }
+                }
+            }
+            if (fullLayer) {
+                layers++;
+            } else {
+                break;
+            }
+        }
+        return layers;
     }
 
     private void removeFromChunkIndex(Claim claim) {

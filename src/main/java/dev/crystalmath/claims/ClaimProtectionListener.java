@@ -234,6 +234,10 @@ public class ClaimProtectionListener implements Listener {
         if (claim.isEmpty()) {
             return;
         }
+        BeaconTier tier = claimManager.getBeaconTier(claim.get());
+        if (!tier.protectsPlayers()) {
+            return;
+        }
         Player attacker = resolveAttacker(event.getDamager());
         if (attacker == null) {
             event.setCancelled(true);
@@ -336,7 +340,14 @@ public class ClaimProtectionListener implements Listener {
             return true;
         }
         Optional<Claim> claim = claimManager.getClaimAt(location);
-        return claim.map(value -> value.isTrusted(player.getUniqueId())).orElse(true);
+        if (claim.isEmpty()) {
+            return true;
+        }
+        BeaconTier tier = claimManager.getBeaconTier(claim.get());
+        if (!tier.protectsBlocks()) {
+            return true;
+        }
+        return claim.get().isTrusted(player.getUniqueId());
     }
 
     private boolean isAuthorized(Player player, Claim claim) {
@@ -348,7 +359,12 @@ public class ClaimProtectionListener implements Listener {
     }
 
     private boolean isProtected(Location location) {
-        return claimManager.getClaimAt(location).isPresent();
+        Optional<Claim> claim = claimManager.getClaimAt(location);
+        if (claim.isEmpty()) {
+            return false;
+        }
+        BeaconTier tier = claimManager.getBeaconTier(claim.get());
+        return tier.protectsBlocks();
     }
 
     private void notifyBlocked(Player player) {

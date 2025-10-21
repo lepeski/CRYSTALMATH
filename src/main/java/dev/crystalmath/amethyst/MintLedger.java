@@ -24,6 +24,7 @@ public class MintLedger {
     public static final String STATUS_REDEEMED = "REDEEMED";
     public static final String EVENT_REDEEMED = "REDEEMED";
     public static final String EVENT_CRAFT_BEACON = "CRAFT_BEACON";
+    public static final String EVENT_BEACON_REDEEM = "BEACON_REDEEM";
     public static final String EVENT_VOID_LOSS = "VOID_LOSS";
     public static final String EVENT_RESPAWN_REPAIR = "RESPAWN_REPAIR";
 

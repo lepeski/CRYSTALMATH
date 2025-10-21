@@ -17,6 +17,7 @@ import dev.crystalmath.amethyst.listeners.GrowthListener;
 import dev.crystalmath.amethyst.listeners.OfflineCrystalListener;
 import dev.crystalmath.amethyst.gui.AreaAdminGui;
 import dev.crystalmath.amethyst.geode.GeodeGenerator;
+import dev.crystalmath.claims.BeaconAuraManager;
 import dev.crystalmath.claims.ClaimAdminCommand;
 import dev.crystalmath.claims.ClaimManager;
 import dev.crystalmath.claims.ClaimProtectionListener;
@@ -45,6 +46,7 @@ public class CrystalMathPlugin extends JavaPlugin {
     private NamespacedKey beaconRecipeKey;
     private CrystalLifecycleListener lifecycleListener;
     private GeodeGenerator geodeGenerator;
+    private BeaconAuraManager beaconAuraManager;
 
     @Override
     public void onEnable() {
@@ -64,30 +66,31 @@ public class CrystalMathPlugin extends JavaPlugin {
         areaManager = new AreaManager(this, ledger);
         geodeGenerator = new GeodeGenerator(this);
 
+        claimManager = new ClaimManager(this);
+        claimManager.load();
+        adminGui = new AdminGui(this, claimManager);
+        areaAdminGui = new AreaAdminGui(this, ledger);
+        beaconAuraManager = new BeaconAuraManager(this, claimManager);
+
         Bukkit.getPluginManager().registerEvents(new FortuneListener(this, ledger, mintedCrystalKey), this);
         lifecycleListener = new CrystalLifecycleListener(this, ledger, mintedCrystalKey);
         Bukkit.getPluginManager().registerEvents(lifecycleListener, this);
         Bukkit.getPluginManager().registerEvents(new OfflineCrystalListener(this, ledger, mintedCrystalKey), this);
         Bukkit.getPluginManager().registerEvents(new GrowthListener(), this);
         Bukkit.getPluginManager().registerEvents(new BeaconCraftListener(this, ledger, mintedCrystalKey, beaconRecipeKey), this);
+        Bukkit.getPluginManager().registerEvents(new ClaimProtectionListener(claimManager), this);
+        Bukkit.getPluginManager().registerEvents(adminGui, this);
+        Bukkit.getPluginManager().registerEvents(areaAdminGui, this);
 
         registerExecutor("claimarea", new ClaimAreaCommand(this, ledger, areaManager));
         registerExecutor("spawncrystals", new SpawnCrystalsCommand(this, ledger, areaManager));
         registerExecutor("spawngeodes", new GenerateGeodesCommand(areaManager, geodeGenerator));
         registerExecutor("supply", new SupplyCommand(this, ledger));
-        registerExecutor("redeem", new RedeemCommand(this, ledger, mintedCrystalKey));
+        registerExecutor("redeem", new RedeemCommand(this, ledger, mintedCrystalKey, claimManager));
         registerExecutor("redeemall", new RedeemAllCommand(this, ledger, mintedCrystalKey));
         registerExecutor("crystalaudit", new CrystalAuditCommand(this, ledger, mintedCrystalKey));
-
-        areaAdminGui = new AreaAdminGui(this, ledger);
-        Bukkit.getPluginManager().registerEvents(areaAdminGui, this);
         registerExecutor("areaadmin", new AreaAdminCommand(areaAdminGui));
 
-        claimManager = new ClaimManager(this);
-        claimManager.load();
-        adminGui = new AdminGui(this, claimManager);
-        Bukkit.getPluginManager().registerEvents(new ClaimProtectionListener(claimManager), this);
-        Bukkit.getPluginManager().registerEvents(adminGui, this);
         ClaimAdminCommand adminCommand = new ClaimAdminCommand(this, claimManager, adminGui);
         PluginCommand claimAdmin = getCommand("claimadmin");
         if (claimAdmin != null) {
@@ -95,11 +98,15 @@ public class CrystalMathPlugin extends JavaPlugin {
             claimAdmin.setTabCompleter(adminCommand);
         }
 
+        beaconAuraManager.start();
         registerBeaconRecipe();
     }
 
     @Override
     public void onDisable() {
+        if (beaconAuraManager != null) {
+            beaconAuraManager.stop();
+        }
         if (claimManager != null) {
             claimManager.save();
         }
