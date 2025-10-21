@@ -7,9 +7,14 @@ authors:
 api-version: '1.21'
 commands:
   claimarea:
-    description: Claims chunks around the player, spawns geodes, and registers a minting area.
-    usage: /claimarea <areaId> <targetCrystals> <radiusInChunks> <geodeCount>
+    description: Claims chunks around the player and registers a minting area.
+    usage: /claimarea <areaId> <targetCrystals> <radiusInChunks>
     permission: amethystcontrol.claimarea
+    permission-message: You do not have permission to use this command.
+  spawngeodes:
+    description: Generates underground geodes for a claimed area.
+    usage: /spawngeodes <areaId> <geodeCount>
+    permission: amethystcontrol.spawngeodes
     permission-message: You do not have permission to use this command.
   spawncrystals:
     description: Spawns amethyst crystals manually.
@@ -46,6 +51,8 @@ commands:
     permission-message: You do not have permission to use this command.
 permissions:
   amethystcontrol.claimarea:
+    default: op
+  amethystcontrol.spawngeodes:
     default: op
   amethystcontrol.spawn:
     default: op

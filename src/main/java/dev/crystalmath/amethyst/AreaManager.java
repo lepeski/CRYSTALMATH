@@ -79,6 +79,20 @@ public class AreaManager {
         return new ArrayList<>(areas.values());
     }
 
+    public Optional<Area> findArea(String id) {
+        if (id == null || id.isBlank()) {
+            return Optional.empty();
+        }
+
+        List<Area> areas = loadAreas();
+        for (Area area : areas) {
+            if (area.id().equalsIgnoreCase(id)) {
+                return Optional.of(area);
+            }
+        }
+        return Optional.empty();
+    }
+
     public Set<Chunk> getChunksFromKeys(World world, List<String> keys) {
         Set<Chunk> chunks = new HashSet<>();
         for (String key : keys) {

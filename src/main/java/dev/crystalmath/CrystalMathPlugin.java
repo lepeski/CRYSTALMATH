@@ -5,6 +5,7 @@ import dev.crystalmath.amethyst.MintLedger;
 import dev.crystalmath.amethyst.commands.AreaAdminCommand;
 import dev.crystalmath.amethyst.commands.ClaimAreaCommand;
 import dev.crystalmath.amethyst.commands.CrystalAuditCommand;
+import dev.crystalmath.amethyst.commands.GenerateGeodesCommand;
 import dev.crystalmath.amethyst.commands.RedeemAllCommand;
 import dev.crystalmath.amethyst.commands.RedeemCommand;
 import dev.crystalmath.amethyst.commands.SpawnCrystalsCommand;
@@ -15,6 +16,7 @@ import dev.crystalmath.amethyst.listeners.FortuneListener;
 import dev.crystalmath.amethyst.listeners.GrowthListener;
 import dev.crystalmath.amethyst.listeners.OfflineCrystalListener;
 import dev.crystalmath.amethyst.gui.AreaAdminGui;
+import dev.crystalmath.amethyst.geode.GeodeGenerator;
 import dev.crystalmath.claims.ClaimAdminCommand;
 import dev.crystalmath.claims.ClaimManager;
 import dev.crystalmath.claims.ClaimProtectionListener;
@@ -42,6 +44,7 @@ public class CrystalMathPlugin extends JavaPlugin {
     private AreaAdminGui areaAdminGui;
     private NamespacedKey beaconRecipeKey;
     private CrystalLifecycleListener lifecycleListener;
+    private GeodeGenerator geodeGenerator;
 
     @Override
     public void onEnable() {
@@ -59,6 +62,7 @@ public class CrystalMathPlugin extends JavaPlugin {
         }
 
         areaManager = new AreaManager(this, ledger);
+        geodeGenerator = new GeodeGenerator(this);
 
         Bukkit.getPluginManager().registerEvents(new FortuneListener(this, ledger, mintedCrystalKey), this);
         lifecycleListener = new CrystalLifecycleListener(this, ledger, mintedCrystalKey);
@@ -69,6 +73,7 @@ public class CrystalMathPlugin extends JavaPlugin {
 
         registerExecutor("claimarea", new ClaimAreaCommand(this, ledger, areaManager));
         registerExecutor("spawncrystals", new SpawnCrystalsCommand(this, ledger, areaManager));
+        registerExecutor("spawngeodes", new GenerateGeodesCommand(areaManager, geodeGenerator));
         registerExecutor("supply", new SupplyCommand(this, ledger));
         registerExecutor("redeem", new RedeemCommand(this, ledger, mintedCrystalKey));
         registerExecutor("redeemall", new RedeemAllCommand(this, ledger, mintedCrystalKey));
