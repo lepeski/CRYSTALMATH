@@ -1,0 +1,11 @@
+# Gradle build output
+/build/
+/.gradle/
+
+# IDE project files
+/.idea/
+*.iml
+/.vscode/
+
+# Archive artifacts
+*.zip
