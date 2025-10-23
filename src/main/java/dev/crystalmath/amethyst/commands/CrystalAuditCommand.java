@@ -309,8 +309,8 @@ public class CrystalAuditCommand implements CommandExecutor {
                 String status = entry.getValue();
                 List<String> contexts = report.mintedContexts().getOrDefault(uuid, List.of("Unknown location"));
                 sender.sendMessage(ChatColor.RED + " - " + uuid + " status=" + status);
-                contexts.stream().limit(MAX_DETAILS).forEach(context ->
-                        sender.sendMessage(ChatColor.DARK_RED + "    * " + context));
+                contexts.stream().limit(MAX_DETAILS).forEach(detail ->
+                        sender.sendMessage(ChatColor.DARK_RED + "    * " + detail));
                 if (contexts.size() > MAX_DETAILS) {
                     sender.sendMessage(ChatColor.DARK_RED + "    * ... " + (contexts.size() - MAX_DETAILS) + " more contexts");
                 }
