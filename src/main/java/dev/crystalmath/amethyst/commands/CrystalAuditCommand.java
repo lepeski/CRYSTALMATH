@@ -23,6 +23,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.ListIterator;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -46,6 +48,10 @@ public class CrystalAuditCommand implements CommandExecutor {
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (args.length > 0 && args[0].equalsIgnoreCase("fix")) {
+            return handleFix(sender, label, args);
+        }
+
         if (!sender.hasPermission("amethystcontrol.audit")) {
             sender.sendMessage(ChatColor.RED + "You do not have permission to run this audit.");
             return true;
@@ -54,58 +60,70 @@ public class CrystalAuditCommand implements CommandExecutor {
         sender.sendMessage(ChatColor.YELLOW + "Starting minted crystal audit. This may take a moment...");
 
         Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
-            MintLedger.SupplySnapshot snapshot;
-            List<MintLedger.LedgerEntry> activeEntries;
-            List<MintLedger.LedgerEntry> heldEntries;
+            AuditContext context;
             try {
-                snapshot = ledger.countByStatus();
-                activeEntries = ledger.listEntriesByStatus(MintLedger.STATUS_ACTIVE);
-                heldEntries = ledger.listEntriesByStatus(MintLedger.STATUS_HELD);
+                context = computeAudit();
             } catch (MintLedger.LedgerException exception) {
                 Bukkit.getScheduler().runTask(plugin, () ->
                         sender.sendMessage(ChatColor.RED + "Ledger query failed: " + exception.getMessage()));
                 return;
             }
 
-            AuditReport report = runWorldAudit(activeEntries);
-            if (!report.success) {
+            if (!context.report().success()) {
                 Bukkit.getScheduler().runTask(plugin, () ->
-                        sender.sendMessage(ChatColor.RED + "Audit failed: " + report.errorMessage));
+                        sender.sendMessage(ChatColor.RED + "Audit failed: " + context.report().errorMessage()));
                 return;
             }
 
-            Map<UUID, MintLedger.LedgerEntry> heldMap = new HashMap<>();
-            for (MintLedger.LedgerEntry entry : heldEntries) {
-                heldMap.put(entry.uuid(), entry);
+            AuditContext finalContext = context;
+            Bukkit.getScheduler().runTask(plugin, () -> sendReport(sender, finalContext));
+        });
+
+        return true;
+    }
+
+    private boolean handleFix(CommandSender sender, String label, String[] args) {
+        if (!sender.hasPermission("amethystcontrol.audit")) {
+            sender.sendMessage(ChatColor.RED + "You do not have permission to run this audit.");
+            return true;
+        }
+
+        String baseCommand = (label == null || label.isEmpty()) ? "crystalaudit" : label;
+
+        if (args.length < 2) {
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /" + baseCommand + " fix <missing|unexpected>");
+            return true;
+        }
+
+        String scope = args[1].toLowerCase(Locale.ROOT);
+        if (!scope.equals("missing") && !scope.equals("unexpected")) {
+            sender.sendMessage(ChatColor.YELLOW + "Usage: /" + baseCommand + " fix <missing|unexpected>");
+            return true;
+        }
+
+        sender.sendMessage(ChatColor.YELLOW + "Running ledger fix for " + scope + " entries...");
+
+        Bukkit.getScheduler().runTaskAsynchronously(plugin, () -> {
+            AuditContext context;
+            try {
+                context = computeAudit();
+            } catch (MintLedger.LedgerException exception) {
+                Bukkit.getScheduler().runTask(plugin, () ->
+                        sender.sendMessage(ChatColor.RED + "Ledger query failed: " + exception.getMessage()));
+                return;
             }
 
-            Set<UUID> expectedHeld = new HashSet<>(heldMap.keySet());
-            Set<UUID> locatedHeld = new HashSet<>(report.mintedContexts.keySet());
-
-            Set<UUID> missingHeld = new HashSet<>(expectedHeld);
-            missingHeld.removeAll(locatedHeld);
-
-            Set<UUID> unexpectedHeld = new HashSet<>(locatedHeld);
-            unexpectedHeld.removeAll(expectedHeld);
-
-            Map<UUID, String> unexpectedStatuses = new HashMap<>();
-            for (UUID uuid : unexpectedHeld) {
-                try {
-                    Optional<MintLedger.LedgerEntry> entryOptional = ledger.findByUuid(uuid);
-                    unexpectedStatuses.put(uuid, entryOptional.map(MintLedger.LedgerEntry::status).orElse("UNKNOWN"));
-                } catch (MintLedger.LedgerException exception) {
-                    unexpectedStatuses.put(uuid, "ERROR: " + exception.getMessage());
-                }
+            if (!context.report().success()) {
+                Bukkit.getScheduler().runTask(plugin, () ->
+                        sender.sendMessage(ChatColor.RED + "Audit failed: " + context.report().errorMessage()));
+                return;
             }
 
-            Bukkit.getScheduler().runTask(plugin, () -> sendReport(
-                    sender,
-                    snapshot,
-                    report,
-                    heldMap,
-                    missingHeld,
-                    unexpectedStatuses
-            ));
+            if (scope.equals("missing")) {
+                fixMissingEntries(sender, context);
+            } else {
+                fixUnexpectedHeld(sender, context);
+            }
         });
 
         return true;
@@ -230,12 +248,12 @@ public class CrystalAuditCommand implements CommandExecutor {
         return state.getType() + " at " + formatLocation(location) + " slot " + slot;
     }
 
-    private void sendReport(CommandSender sender,
-                            MintLedger.SupplySnapshot snapshot,
-                            AuditReport report,
-                            Map<UUID, MintLedger.LedgerEntry> heldMap,
-                            Set<UUID> missingHeld,
-                            Map<UUID, String> unexpectedStatuses) {
+    private void sendReport(CommandSender sender, AuditContext context) {
+        MintLedger.SupplySnapshot snapshot = context.snapshot();
+        AuditReport report = context.report();
+        Map<UUID, MintLedger.LedgerEntry> heldMap = context.heldMap();
+        Set<UUID> missingHeld = context.missingHeld();
+        Map<UUID, String> unexpectedStatuses = context.unexpectedStatuses();
         sender.sendMessage(ChatColor.GOLD + "Ledger totals: "
                 + ChatColor.WHITE + "active=" + snapshot.active()
                 + ChatColor.GRAY + ", held=" + snapshot.held()
@@ -244,29 +262,30 @@ public class CrystalAuditCommand implements CommandExecutor {
                 + ChatColor.GRAY + " (total=" + snapshot.total() + ")");
 
         sender.sendMessage(ChatColor.GOLD + "Active crystals: "
-                + ChatColor.WHITE + report.confirmedActive + " confirmed"
-                + ChatColor.GRAY + ", " + report.missingActive.size() + " missing"
-                + ChatColor.GRAY + ", " + report.unloadedActive.size() + " unloaded");
+                + ChatColor.WHITE + report.confirmedActive() + " confirmed"
+                + ChatColor.GRAY + ", " + report.missingActive().size() + " missing"
+                + ChatColor.GRAY + ", " + report.unloadedActive().size() + " unloaded");
 
-        if (!report.missingActive.isEmpty()) {
+        if (!report.missingActive().isEmpty()) {
             sender.sendMessage(ChatColor.RED + "Missing active entries:");
-            report.missingActive.stream().limit(MAX_DETAILS).forEach(entry ->
+            report.missingActive().stream().limit(MAX_DETAILS).forEach(entry ->
                     sender.sendMessage(ChatColor.RED + " - " + entry.uuid() + " at " + formatLedgerLocation(entry)));
-            if (report.missingActive.size() > MAX_DETAILS) {
-                sender.sendMessage(ChatColor.RED + " - ... " + (report.missingActive.size() - MAX_DETAILS) + " more");
+            if (report.missingActive().size() > MAX_DETAILS) {
+                sender.sendMessage(ChatColor.RED + " - ... " + (report.missingActive().size() - MAX_DETAILS) + " more");
             }
+            sender.sendMessage(ChatColor.YELLOW + "Run /crystalaudit fix missing to mark absent crystals as lost in the ledger.");
         }
 
-        if (!report.unloadedActive.isEmpty()) {
+        if (!report.unloadedActive().isEmpty()) {
             sender.sendMessage(ChatColor.YELLOW + "Active crystals in unloaded chunks:");
-            report.unloadedActive.stream().limit(MAX_DETAILS).forEach(entry ->
+            report.unloadedActive().stream().limit(MAX_DETAILS).forEach(entry ->
                     sender.sendMessage(ChatColor.YELLOW + " - " + entry.uuid() + " at " + formatLedgerLocation(entry)));
-            if (report.unloadedActive.size() > MAX_DETAILS) {
-                sender.sendMessage(ChatColor.YELLOW + " - ... " + (report.unloadedActive.size() - MAX_DETAILS) + " more");
+            if (report.unloadedActive().size() > MAX_DETAILS) {
+                sender.sendMessage(ChatColor.YELLOW + " - ... " + (report.unloadedActive().size() - MAX_DETAILS) + " more");
             }
         }
 
-        int heldLocated = report.mintedContexts.size();
+        int heldLocated = report.mintedContexts().size();
         sender.sendMessage(ChatColor.GOLD + "Held crystals: "
                 + ChatColor.WHITE + heldMap.size() + " in ledger"
                 + ChatColor.GRAY + ", " + heldLocated + " located in loaded inventories/drops"
@@ -288,7 +307,7 @@ public class CrystalAuditCommand implements CommandExecutor {
             unexpectedStatuses.entrySet().stream().limit(MAX_DETAILS).forEach(entry -> {
                 UUID uuid = entry.getKey();
                 String status = entry.getValue();
-                List<String> contexts = report.mintedContexts.getOrDefault(uuid, List.of("Unknown location"));
+                List<String> contexts = report.mintedContexts().getOrDefault(uuid, List.of("Unknown location"));
                 sender.sendMessage(ChatColor.RED + " - " + uuid + " status=" + status);
                 contexts.stream().limit(MAX_DETAILS).forEach(context ->
                         sender.sendMessage(ChatColor.DARK_RED + "    * " + context));
@@ -299,6 +318,7 @@ public class CrystalAuditCommand implements CommandExecutor {
             if (unexpectedStatuses.size() > MAX_DETAILS) {
                 sender.sendMessage(ChatColor.RED + " - ... " + (unexpectedStatuses.size() - MAX_DETAILS) + " more");
             }
+            sender.sendMessage(ChatColor.YELLOW + "Run /crystalaudit fix unexpected to move these crystals back to HELD status.");
         }
 
         sender.sendMessage(ChatColor.GRAY + "Audit complete. Online players, offline inventories, dropped items, and loaded containers were inspected.");
@@ -309,6 +329,124 @@ public class CrystalAuditCommand implements CommandExecutor {
             return "(no recorded location)";
         }
         return String.format("%s (%d, %d, %d)", entry.world(), entry.x(), entry.y(), entry.z());
+    }
+
+    private void fixMissingEntries(CommandSender sender, AuditContext context) {
+        List<MintLedger.LedgerEntry> missing = context.report().missingActive();
+        if (missing.isEmpty()) {
+            Bukkit.getScheduler().runTask(plugin, () ->
+                    sender.sendMessage(ChatColor.GREEN + "No missing active entries found during audit."));
+            return;
+        }
+
+        int fixed = 0;
+        List<String> failures = new ArrayList<>();
+        for (MintLedger.LedgerEntry entry : missing) {
+            String details = "Audit fix missing active - last known " + formatLedgerLocation(entry);
+            try {
+                boolean updated = ledger.markLostWithEvent(entry.uuid(), null, MintLedger.EVENT_AUDIT_FIX, details);
+                if (updated) {
+                    fixed++;
+                } else {
+                    failures.add(entry.uuid() + " (no status change)");
+                }
+            } catch (MintLedger.LedgerException exception) {
+                failures.add(entry.uuid() + " (" + exception.getMessage() + ")");
+            }
+        }
+
+        int fixedCount = fixed;
+        List<String> failedEntries = List.copyOf(failures);
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            sender.sendMessage(ChatColor.GREEN + "Marked " + fixedCount + " missing crystals as lost.");
+            if (!failedEntries.isEmpty()) {
+                sender.sendMessage(ChatColor.RED + "Failed to update " + failedEntries.size() + " entries:");
+                ListIterator<String> iterator = failedEntries.listIterator();
+                for (int shown = 0; shown < MAX_DETAILS && iterator.hasNext(); shown++) {
+                    sender.sendMessage(ChatColor.RED + " - " + iterator.next());
+                }
+                if (failedEntries.size() > MAX_DETAILS) {
+                    sender.sendMessage(ChatColor.RED + " - ... " + (failedEntries.size() - MAX_DETAILS) + " more");
+                }
+            }
+        });
+    }
+
+    private void fixUnexpectedHeld(CommandSender sender, AuditContext context) {
+        Map<UUID, String> unexpectedStatuses = context.unexpectedStatuses();
+        if (unexpectedStatuses.isEmpty()) {
+            Bukkit.getScheduler().runTask(plugin, () ->
+                    sender.sendMessage(ChatColor.GREEN + "No unexpected held crystals detected."));
+            return;
+        }
+
+        int fixed = 0;
+        List<String> failures = new ArrayList<>();
+        for (UUID uuid : unexpectedStatuses.keySet()) {
+            try {
+                boolean updated = ledger.markHeld(uuid);
+                if (updated) {
+                    fixed++;
+                } else {
+                    failures.add(uuid + " (no status change)");
+                }
+            } catch (MintLedger.LedgerException exception) {
+                failures.add(uuid + " (" + exception.getMessage() + ")");
+            }
+        }
+
+        int fixedCount = fixed;
+        List<String> failedEntries = List.copyOf(failures);
+        Bukkit.getScheduler().runTask(plugin, () -> {
+            sender.sendMessage(ChatColor.GREEN + "Updated " + fixedCount + " crystals to HELD status.");
+            if (!failedEntries.isEmpty()) {
+                sender.sendMessage(ChatColor.RED + "Failed to update " + failedEntries.size() + " entries:");
+                ListIterator<String> iterator = failedEntries.listIterator();
+                for (int shown = 0; shown < MAX_DETAILS && iterator.hasNext(); shown++) {
+                    sender.sendMessage(ChatColor.RED + " - " + iterator.next());
+                }
+                if (failedEntries.size() > MAX_DETAILS) {
+                    sender.sendMessage(ChatColor.RED + " - ... " + (failedEntries.size() - MAX_DETAILS) + " more");
+                }
+            }
+        });
+    }
+
+    private AuditContext computeAudit() {
+        MintLedger.SupplySnapshot snapshot = ledger.countByStatus();
+        List<MintLedger.LedgerEntry> activeEntries = ledger.listEntriesByStatus(MintLedger.STATUS_ACTIVE);
+        List<MintLedger.LedgerEntry> heldEntries = ledger.listEntriesByStatus(MintLedger.STATUS_HELD);
+
+        AuditReport report = runWorldAudit(activeEntries);
+        if (!report.success()) {
+            return new AuditContext(snapshot, report, Map.of(), Set.of(), Map.of());
+        }
+
+        Map<UUID, MintLedger.LedgerEntry> heldMap = new HashMap<>();
+        for (MintLedger.LedgerEntry entry : heldEntries) {
+            heldMap.put(entry.uuid(), entry);
+        }
+
+        Set<UUID> expectedHeld = new HashSet<>(heldMap.keySet());
+        Set<UUID> locatedHeld = new HashSet<>(report.mintedContexts().keySet());
+
+        Set<UUID> missingHeld = new HashSet<>(expectedHeld);
+        missingHeld.removeAll(locatedHeld);
+
+        Set<UUID> unexpectedHeld = new HashSet<>(locatedHeld);
+        unexpectedHeld.removeAll(expectedHeld);
+
+        Map<UUID, String> unexpectedStatuses = new HashMap<>();
+        for (UUID uuid : unexpectedHeld) {
+            try {
+                Optional<MintLedger.LedgerEntry> entryOptional = ledger.findByUuid(uuid);
+                unexpectedStatuses.put(uuid, entryOptional.map(MintLedger.LedgerEntry::status).orElse("UNKNOWN"));
+            } catch (MintLedger.LedgerException exception) {
+                unexpectedStatuses.put(uuid, "ERROR: " + exception.getMessage());
+            }
+        }
+
+        return new AuditContext(snapshot, report, heldMap, missingHeld, unexpectedStatuses);
     }
 
     private String formatHeldDetails(MintLedger.LedgerEntry entry) {
@@ -345,6 +483,13 @@ public class CrystalAuditCommand implements CommandExecutor {
         static AuditReport failure(String message) {
             return new AuditReport(false, message, 0, List.of(), List.of(), Map.of());
         }
+    }
+
+    private record AuditContext(MintLedger.SupplySnapshot snapshot,
+                                AuditReport report,
+                                Map<UUID, MintLedger.LedgerEntry> heldMap,
+                                Set<UUID> missingHeld,
+                                Map<UUID, String> unexpectedStatuses) {
     }
 }
 

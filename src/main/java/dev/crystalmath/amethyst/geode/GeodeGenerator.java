@@ -19,6 +19,12 @@ public class GeodeGenerator {
     private static final double MIN_SURFACE_CLEARANCE = 4.0D;
     private static final double BASE_SEPARATION_BUFFER = 3.0D;
     private static final double BUDDING_CHANCE = 0.35D;
+    private static final Set<Material> CRYSTAL_TYPES = Set.of(
+            Material.AMETHYST_CLUSTER,
+            Material.LARGE_AMETHYST_BUD,
+            Material.MEDIUM_AMETHYST_BUD,
+            Material.SMALL_AMETHYST_BUD
+    );
 
     private final CrystalMathPlugin plugin;
 
@@ -69,6 +75,7 @@ public class GeodeGenerator {
         ThreadLocalRandom random = ThreadLocalRandom.current();
         for (PlannedGeode geode : geodes) {
             carveGeode(geode, random);
+            removeCrystals(geode);
         }
     }
 
@@ -209,6 +216,30 @@ public class GeodeGenerator {
                     }
 
                     block.setType(replacement, false);
+                }
+            }
+        }
+    }
+
+    private void removeCrystals(PlannedGeode geode) {
+        Location center = geode.center();
+        World world = center.getWorld();
+        if (world == null) {
+            return;
+        }
+
+        int centerX = center.getBlockX();
+        int centerY = center.getBlockY();
+        int centerZ = center.getBlockZ();
+        int radius = geode.radius();
+
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dy = -radius; dy <= radius; dy++) {
+                for (int dz = -radius; dz <= radius; dz++) {
+                    Block block = world.getBlockAt(centerX + dx, centerY + dy, centerZ + dz);
+                    if (CRYSTAL_TYPES.contains(block.getType())) {
+                        block.setType(Material.AIR, false);
+                    }
                 }
             }
         }

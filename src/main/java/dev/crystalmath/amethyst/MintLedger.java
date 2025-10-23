@@ -27,6 +27,7 @@ public class MintLedger {
     public static final String EVENT_BEACON_REDEEM = "BEACON_REDEEM";
     public static final String EVENT_VOID_LOSS = "VOID_LOSS";
     public static final String EVENT_RESPAWN_REPAIR = "RESPAWN_REPAIR";
+    public static final String EVENT_AUDIT_FIX = "AUDIT_FIX";
 
     private final JavaPlugin plugin;
     private Connection connection;
